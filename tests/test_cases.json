@@ -1,0 +1,305 @@
+[
+    {
+        "note": "slide 8 - chuẩn",
+        "address": "63 Nam Kỳ Khởi Nghĩa, Phường Bến Thành, Thành phố Hồ Chí Minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "slide 8 - số nhà có dấu /",
+        "address": "56/33 Nam Kỳ Khởi Nghĩa, Phường Bến Thành, Thành phố Hồ Chí Minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "slide 8 - số nhà nhiều cấp",
+        "address": "69/49/59 Nam Kỳ Khởi Nghĩa, Phường Bến Thành, Thành phố Hồ Chí Minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "slide 6 - DB lưu tắt LTK, phường không có trong DB -> rỗng",
+        "address": "268 Lý Thường Kiệt, Diên Hồng, TP. HCM",
+        "result": {"street": "LTK", "ward": "", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "viết tắt P. / TP.",
+        "address": "45 Lê Lợi, P. Bến Thành, TP.HCM",
+        "result": {"street": "Lê Lợi", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "viết tắt dính liền P.xxx",
+        "address": "15 Trần Hưng Đạo, P.Cầu Ông Lãnh, Tp Hồ Chí Minh",
+        "result": {"street": "Trần Hưng Đạo", "ward": "Phường Cầu Ông Lãnh", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "tỉnh viết tắt HN",
+        "address": "Số 5 Tràng Tiền, P. Hoàn Kiếm, HN",
+        "result": {"street": "Tràng Tiền", "ward": "Phường Hoàn Kiếm", "province": "Thành phố Hà Nội"}
+    },
+    {
+        "note": "tiền tố cấp huyện cũ (Q.) + tỉnh viết tắt ĐN",
+        "address": "100 Bạch Đằng, Q. Hải Châu, ĐN",
+        "result": {"street": "Bạch Đằng", "ward": "Phường Hải Châu", "province": "Thành phố Đà Nẵng"}
+    },
+    {
+        "note": "đường viết tắt CMT8",
+        "address": "234 CMT8, P. Bàn Cờ, TP.HCM",
+        "result": {"street": "Cách Mạng Tháng 8", "ward": "Phường Bàn Cờ", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "đường viết tắt NKKN",
+        "address": "12 NKKN, Bến Thành, HCM",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "X. / T. dính liền, không dấu phẩy",
+        "address": "X.Cần Giuộc T.Tây Ninh",
+        "result": {"street": "", "ward": "Xã Cần Giuộc", "province": "Tỉnh Tây Ninh"}
+    },
+    {
+        "note": "đặc khu",
+        "address": "Đặc khu Côn Đảo, TP. Hồ Chí Minh",
+        "result": {"street": "", "ward": "Đặc khu Côn Đảo", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "họ Dương không phải tiền tố Đường",
+        "address": "45 Dương Bá Trạc, P. Chánh Hưng, TP.HCM",
+        "result": {"street": "Dương Bá Trạc", "ward": "Phường Chánh Hưng", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "Đ. trước tên đường, Q.3 cũ",
+        "address": "Đ. Võ Văn Tần, P. Xuân Hòa, Q.3, TP HCM",
+        "result": {"street": "Võ Văn Tần", "ward": "Phường Xuân Hòa", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "không dấu",
+        "address": "63 nam ky khoi nghia, phuong ben thanh, thanh pho ho chi minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "không dấu, thiếu tiền tố",
+        "address": "12 Nguyen Hue, Sai Gon, HCM",
+        "result": {"street": "Nguyễn Huệ", "ward": "Phường Sài Gòn", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "toàn chữ hoa",
+        "address": "63 NAM KỲ KHỞI NGHĨA, PHƯỜNG BẾN THÀNH, TP HỒ CHÍ MINH",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "không dấu, viết thường",
+        "address": "so 1 dien bien phu, gia dinh, ho chi minh",
+        "result": {"street": "Điện Biên Phủ", "ward": "Phường Gia Định", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "OCR dính chữ (CamelCase)",
+        "address": "63 NamKỳKhởiNghĩa,PhườngBếnThành,TPHồChíMinh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "thiếu dấu phẩy",
+        "address": "63 Nam Kỳ Khởi Nghĩa Phường Bến Thành Thành phố Hồ Chí Minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "tiền tố dính vào tên (XCần, TTây)",
+        "address": "XCần Giuộc, TTây Ninh",
+        "result": {"street": "", "ward": "Xã Cần Giuộc", "province": "Tỉnh Tây Ninh"}
+    },
+    {
+        "note": "không dấu, tên viết liền",
+        "address": "x cangiuoc tayninh",
+        "result": {"street": "", "ward": "Xã Cần Giuộc", "province": "Tỉnh Tây Ninh"}
+    },
+    {
+        "note": "số nhà dính tên đường",
+        "address": "45LêLợi P.BếnThành TP.HCM",
+        "result": {"street": "Lê Lợi", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "lỗi chính tả: Ngia (thiếu h)",
+        "address": "63 Nam Ky Khoi Ngia, Phuong Ben Thanh, TP Ho Chi Minh",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "lỗi chính tả: Lơi, Thàn",
+        "address": "45 Lê Lơi, P. Bến Thàn, TP. HCM",
+        "result": {"street": "Lê Lợi", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "lỗi chính tả: Cưòng, Nẵg",
+        "address": "Phường Hòa Cưòng, Đà Nẵg",
+        "result": {"street": "", "ward": "Phường Hòa Cường", "province": "Thành phố Đà Nẵng"}
+    },
+    {
+        "note": "lỗi chính tả: Ngệ An",
+        "address": "Trường Vinh, Ngệ An",
+        "result": {"street": "", "ward": "Phường Trường Vinh", "province": "Tỉnh Nghệ An"}
+    },
+    {
+        "note": "Hoá / Hóa",
+        "address": "12 Trần Phú, Hạc Thành, Thanh Hoá",
+        "result": {"street": "Trần Phú", "ward": "Phường Hạc Thành", "province": "Tỉnh Thanh Hóa"}
+    },
+    {
+        "note": "lỗi chính tả: Khia (đảo chữ = 2 lỗi)",
+        "address": "88 Nguyễn Thị Minh Khia, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {"street": "Nguyễn Thị Minh Khai", "ward": "Phường Bàn Cờ", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "lỗi dấu + tiền tố tỉnh sai chính tả",
+        "address": "Phuờng Tân Đinh, Thàn phố Hồ Chí Minh",
+        "result": {"street": "", "ward": "Phường Tân Định", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "thiếu đường",
+        "address": "Phường Bến Thành, TP HCM",
+        "result": {"street": "", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "thiếu phường",
+        "address": "Nam Kỳ Khởi Nghĩa, TP HCM",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "chỉ có tỉnh",
+        "address": "Hà Nội",
+        "result": {"street": "", "ward": "", "province": "Thành phố Hà Nội"}
+    },
+    {
+        "note": "chỉ có phường",
+        "address": "Bến Thành",
+        "result": {"street": "", "ward": "Phường Bến Thành", "province": ""}
+    },
+    {
+        "note": "chuỗi rỗng",
+        "address": "",
+        "result": {"street": "", "ward": "", "province": ""}
+    },
+    {
+        "note": "đường + phường không có trong DB",
+        "address": "123 Đường ABC, Khu phố 3, Thành phố Hồ Chí Minh",
+        "result": {"street": "", "ward": "", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "Lê Lai không có trong DB -> không được sửa thành Lê Lợi",
+        "address": "12 Lê Lai, P. Bến Thành, Q.1, HCM",
+        "result": {"street": "", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "Phường 14 không có trong DB -> không được khớp Phường 1 / Phường 12",
+        "address": "268 Lý Thường Kiệt, Phường 14, Quận 10, TP. HCM",
+        "result": {"street": "LTK", "ward": "", "province": "Thành phố Hồ Chí Minh"}
+    },
+
+    {
+        "note": "Hai Bà Trưng là phường (có tiền tố)",
+        "address": "Phường Hai Bà Trưng, Hà Nội",
+        "result": {"street": "", "ward": "Phường Hai Bà Trưng", "province": "Thành phố Hà Nội"}
+    },
+    {
+        "note": "Hai Bà Trưng là đường (đứng trước phường)",
+        "address": "30 Hai Bà Trưng, Phường Tân Định, TP HCM",
+        "result": {"street": "Hai Bà Trưng", "ward": "Phường Tân Định", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "Điện Biên Phủ là đường, không phải tỉnh Điện Biên",
+        "address": "Điện Biên Phủ, Phường Gia Định, TP. Hồ Chí Minh",
+        "result": {"street": "Điện Biên Phủ", "ward": "Phường Gia Định", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "trùng khoá không dấu: tiền tố P. -> Phường Bình Thạnh",
+        "address": "P. Binh Thanh, TP HCM",
+        "result": {"street": "", "ward": "Phường Bình Thạnh", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "trùng khoá không dấu: tiền tố X. -> Xã Bình Thành",
+        "address": "X. Binh Thanh, Đồng Tháp",
+        "result": {"street": "", "ward": "Xã Bình Thành", "province": "Tỉnh Đồng Tháp"}
+    },
+    {
+        "note": "trùng khoá không dấu: dấu Thạnh",
+        "address": "Bình Thạnh, Hồ Chí Minh",
+        "result": {"street": "", "ward": "Phường Bình Thạnh", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "trùng khoá không dấu: dấu Thành",
+        "address": "Bình Thành, Đồng Tháp",
+        "result": {"street": "", "ward": "Xã Bình Thành", "province": "Tỉnh Đồng Tháp"}
+    },
+    {
+        "note": "cùng tên An Phú: Xã",
+        "address": "Xã An Phú, An Giang",
+        "result": {"street": "", "ward": "Xã An Phú", "province": "Tỉnh An Giang"}
+    },
+    {
+        "note": "cùng tên An Phú: Phường",
+        "address": "P. An Phú, TP HCM",
+        "result": {"street": "", "ward": "Phường An Phú", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "phường có tiền tố thắng tên quận cũ trùng tên phường khác",
+        "address": "Phuong Ngoc Ha, Ba Dinh, Ha Noi",
+        "result": {"street": "", "ward": "Phường Ngọc Hà", "province": "Thành phố Hà Nội"}
+    },
+    {
+        "note": "Huệ (đường) vs Huế (tỉnh)",
+        "address": "12 Nguyễn Huệ, TP Huế",
+        "result": {"street": "Nguyễn Huệ", "ward": "", "province": "Thành phố Huế"}
+    },
+    {
+        "note": "tên tỉnh cũ Thừa Thiên Huế",
+        "address": "Phú Xuân, Thừa Thiên Huế",
+        "result": {"street": "", "ward": "Phường Phú Xuân", "province": "Thành phố Huế"}
+    },
+    {
+        "note": "tên phường có gạch nối, input bỏ gạch",
+        "address": "Văn Miếu Quốc Tử Giám, Hà Nội",
+        "result": {"street": "", "ward": "Phường Văn Miếu - Quốc Tử Giám", "province": "Thành phố Hà Nội"}
+    },
+    {
+        "note": "tên phường có gạch nối (2)",
+        "address": "Xuân Hương Đà Lạt, Lâm Đồng",
+        "result": {"street": "", "ward": "Phường Xuân Hương - Đà Lạt", "province": "Tỉnh Lâm Đồng"}
+    },
+
+    {
+        "note": "phường số P.12",
+        "address": "45 Hùng Vương, P.12, Tỉnh Vĩnh Long",
+        "result": {"street": "Hùng Vương", "ward": "Phường 12", "province": "Tỉnh Vĩnh Long"}
+    },
+    {
+        "note": "phường số Phường 1",
+        "address": "45 Hùng Vương, Phường 1, Tỉnh Vĩnh Long",
+        "result": {"street": "Hùng Vương", "ward": "Phường 1", "province": "Tỉnh Vĩnh Long"}
+    },
+    {
+        "note": "số nhà 12 không phải Phường 12",
+        "address": "Số 12 Hùng Vương, Tỉnh Vĩnh Long",
+        "result": {"street": "Hùng Vương", "ward": "", "province": "Tỉnh Vĩnh Long"}
+    },
+    {
+        "note": "phường số kiểu F1",
+        "address": "F1, Vĩnh Long",
+        "result": {"street": "", "ward": "Phường 1", "province": "Tỉnh Vĩnh Long"}
+    },
+    {
+        "note": "đường tên số 3/2",
+        "address": "268 3/2, P. 12, Vĩnh Long",
+        "result": {"street": "3/2", "ward": "Phường 12", "province": "Tỉnh Vĩnh Long"}
+    },
+
+    {
+        "note": "nhiễu: tầng, toà nhà, Việt Nam",
+        "address": "Tầng 5, Tòa nhà ABC, 63 Nam Kỳ Khởi Nghĩa, Phường Bến Thành, TP HCM, Việt Nam",
+        "result": {"street": "Nam Kỳ Khởi Nghĩa", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    },
+    {
+        "note": "nhiễu: ghi chú giao hàng",
+        "address": "Giao hàng giờ hành chính - 45 Lê Lợi, P Bến Thành, HCM",
+        "result": {"street": "Lê Lợi", "ward": "Phường Bến Thành", "province": "Thành phố Hồ Chí Minh"}
+    }
+]
