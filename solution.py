@@ -21,6 +21,7 @@ Thuật toán (chi tiết ở README.md):
                  hoặc nhận 1 ứng viên (điểm ~ số ký tự phủ được - phạt lỗi - phạt lệch ranh giới).
 """
 import os
+import time
 import unicodedata
 
 NOT_FOUND = ""  # slide ghi "Null"; đổi thành "Null" hoặc None nếu bộ chấm yêu cầu
@@ -47,6 +48,7 @@ ACRONYM_PENALTY = 1.0          # input "Lý Thường Kiệt" khớp với "LTK"
 HOUSE_NUMBER_BONUS = 2.0       # tên đường đứng ngay sau số nhà ("45 Lê Lợi")
 TYPE_BIAS = (0.01, 0.02, 0.0)  # phá thế hoà: một tên vừa là đường vừa là phường -> chọn phường
 MAX_EDITS = 2
+FUZZY_TIME_BUDGET = 0.04       # giây cho lượt tìm gần đúng, để input rất dài vẫn dưới 0.1 s / request
 
 
 def _allowed_edits(length):
@@ -359,13 +361,18 @@ class Solution:
         # Lượt 2: còn chữ cái nào chưa được giải thích thì tìm gần đúng (Levenshtein trên Trie)
         # từ mọi đầu từ. Chạy cả khi lượt 1 đã đủ 3 trường, vì lượt 1 có thể chỉ khớp được một tên
         # ngắn hơn ("Nam Kỳ" thay vì "Nam Ky Khoi Ngia") hoặc khớp nhầm.
+        # Duyệt từ cuối chuỗi (tỉnh/phường thường nằm cuối) và dừng khi hết FUZZY_TIME_BUDGET:
+        # chỉ input rất dài (kèm ghi chú hàng trăm ký tự) mới chạm giới hạn này.
         covered = bytearray(n)
         for u in chosen.values():
             covered[u[0]:u[1]] = b"\x01" * (u[1] - u[0])
         if any(S[p].isalpha() and not covered[p] for p in range(n)):
-            for i in range(n):
+            deadline = time.perf_counter() + FUZZY_TIME_BUDGET
+            for i in range(n - 1, -1, -1):
                 if bound[i]:
                     self._collect(ctx, i, n, (STREET, WARD, PROVINCE), True, units)
+                    if time.perf_counter() > deadline:
+                        break
             chosen = _best_segmentation(n, units)
 
         for t, u in chosen.items():

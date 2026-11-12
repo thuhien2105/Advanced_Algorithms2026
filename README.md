@@ -33,7 +33,8 @@ address_segmentation/
 │   └── list_street.txt    #   một ít tên đường
 ├── tests/
 │   ├── test_cases.json    # 59 test case, định dạng giống slide 8
-│   └── test_solution.py   # unit test + test thời gian
+│   ├── test_solution.py   # unit test thuật toán + test thời gian
+│   └── test_irregular.py  # input bất quy tắc, bảng runtime, kiểm tra format nộp theo slide
 ├── evaluate.py            # chấm điểm giống bảng ở slide 10
 └── benchmark.py           # đo tốc độ với DB cỡ thật (~27.000 tên, sinh ngẫu nhiên)
 ```
@@ -78,6 +79,21 @@ python -m unittest discover -s tests -v
 Gồm: test chuẩn hoá chuỗi, test Trie (khớp chính xác / gần đúng), 59 test case trong
 `tests/test_cases.json`, 2 ví dụ ở slide 6, các lỗi bắt nhầm khi DB lớn, và test thời gian
 (max ≤ 0.1 s, trung bình ≤ 0.01 s trên DB ~27.000 tên).
+
+`tests/test_irregular.py` kiểm tra thêm:
+- **Input bất quy tắc**: dấu chấm (`TP. H.C.M`, `P . Bến Thành`, `...`), khoảng trắng thừa/thiếu, tab,
+  xuống dòng, NBSP, zero-width space, `; - | / ( ) " ' [ ] # @ *`, emoji, số toàn chiều rộng (`６３`),
+  Unicode dạng tổ hợp (NFD), chuỗi rỗng / `None` / chỉ có dấu câu, chuỗi rất dài (tới 3.000 ký tự).
+- **Runtime**: đo trên DB ~27.000 tên và in bảng `max / avg` cho từng bộ input, báo `DAT` / `VUOT`.
+- **Format nộp theo slide**: output đúng 3 khoá `street, ward, province` (slide 8), giá trị lấy nguyên văn
+  trong DB, file test đúng định dạng slide 8, DB 34 tỉnh (slide 7), chỉ dùng thư viện chuẩn, không mạng,
+  không ML (slide 11), chạy được khi đứng ở thư mục khác, README có hướng dẫn chạy (slide 11).
+
+Chỉ chạy phần này (in bảng runtime):
+
+```bash
+python -m unittest tests.test_irregular -v
+```
 
 ### 2.3. Chấm điểm giống slide 10
 
@@ -202,6 +218,8 @@ giải quyết theo toàn cục, không theo từng đoạn riêng lẻ:
 Với `n` ≈ 30–80 ký tự và `L` là độ dài tên dài nhất:
 - Lượt 1: O(n · L), chỉ là các phép tra dict.
 - Lượt 2: O(số đầu từ × số nút Trie được duyệt × 5); nhờ cắt nhánh nên chỉ duyệt một phần rất nhỏ của Trie.
+  Lượt này duyệt từ cuối chuỗi và dừng khi hết `FUZZY_TIME_BUDGET = 0.04 s`, để input rất dài
+  (kèm ghi chú hàng trăm ký tự) vẫn dưới 0.1 s. Địa chỉ bình thường chỉ tốn vài ms nên không chạm ngưỡng này.
 - DP: O(4n + 4 × số ứng viên).
 
 ---
