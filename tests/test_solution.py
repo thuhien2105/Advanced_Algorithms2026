@@ -175,6 +175,14 @@ class TestTrungTenVoiDBLon(unittest.TestCase):
     def test_ho_duong_khong_phai_duong(self):
         self.check("12 Dương Minh, P. Bến Thành, TP HCM", "Dương Minh", "Phường Bến Thành", "Thành phố Hồ Chí Minh")
 
+    def test_hien_test1(self):
+        self.check("", "", "", "")
+
+    def test_hien_test2(self):
+        self.check("xyz", "", "", "")
+
+    def test_hien_test3(self):
+        self.check(".", "", "", "")
 
 class TestSpeed(unittest.TestCase):
     """Yêu cầu đề: tối đa 0.1 s / request, trung bình 0.01 s / request, với DB cỡ thật."""
