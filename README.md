@@ -34,7 +34,9 @@ address_segmentation/
 ├── tests/
 │   ├── test_cases.json    # 59 test case, định dạng giống slide 8
 │   ├── test_solution.py   # unit test thuật toán + test thời gian
-│   └── test_irregular.py  # input bất quy tắc, bảng runtime, kiểm tra format nộp theo slide
+│   ├── test_irregular.py  # input bất quy tắc, bảng runtime, kiểm tra format nộp theo slide
+│   ├── test_public.py     # chạy bộ public test của thầy + các biến thể nhiễu của nó
+│   └── public/            # bộ public của thầy: public.json (200 mẫu) + list_province/ward/street.txt
 ├── evaluate.py            # chấm điểm giống bảng ở slide 10
 └── benchmark.py           # đo tốc độ với DB cỡ thật (~27.000 tên, sinh ngẫu nhiên)
 ```
@@ -93,6 +95,23 @@ Chỉ chạy phần này (in bảng runtime):
 
 ```bash
 python -m unittest tests.test_irregular -v
+```
+
+`tests/test_public.py` chạy **bộ public test của thầy** (`tests/public/`, DB riêng của thầy, tên không có
+tiền tố "Phường"/"Tỉnh") và in bảng điểm giống slide 10:
+- từng mẫu trong `public.json` phải đúng cả 3 trường, max ≤ 0.1 s, trung bình ≤ 0.01 s;
+- làm nhiễu chính 200 mẫu đó (bỏ dấu, bỏ dấu phẩy, viết tắt, hoa/thường, gõ sai 1 ký tự, trộn tất cả),
+  mỗi kiểu phải đạt ≥ 9.5/10.
+
+```bash
+python -m unittest tests.test_public -v
+```
+
+Hai test đo tốc độ trên DB cỡ thật (`TestSpeed`, `TestRuntime`) cần thư mục `data_real/`; chưa có thì
+được bỏ qua (`skipped`). Tạo một lần (cần internet):
+
+```bash
+python tools/build_real_db.py
 ```
 
 ### 2.3. Chấm điểm giống slide 10

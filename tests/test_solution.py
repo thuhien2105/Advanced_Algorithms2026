@@ -189,6 +189,8 @@ class TestSpeed(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        if not benchmark.has_real_data():
+            raise unittest.SkipTest(benchmark.NO_REAL_DATA)
         cls.tmp = tempfile.mkdtemp()
         cls.paths = benchmark.make_big_db(cls.tmp)
         cls.solver = Solution(**cls.paths)

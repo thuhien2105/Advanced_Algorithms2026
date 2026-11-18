@@ -13,8 +13,8 @@ Tỉnh Điện Biên
 Tỉnh Lạng Sơn
 Tỉnh Sơn La
 Tỉnh Phú Thọ
-Tỉnh Bắc Ninh
-Tỉnh Quảng Ninh
+Thành phố Bắc Ninh
+Thành phố Quảng Ninh
 Tỉnh Hưng Yên
 Tỉnh Ninh Bình
 Tỉnh Thanh Hóa
@@ -26,7 +26,7 @@ Tỉnh Gia Lai
 Tỉnh Khánh Hòa
 Tỉnh Lâm Đồng
 Tỉnh Đắk Lắk
-Tỉnh Đồng Nai
+Thành phố Đồng Nai
 Tỉnh Tây Ninh
 Tỉnh Vĩnh Long
 Tỉnh Đồng Tháp

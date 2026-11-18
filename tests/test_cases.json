@@ -253,7 +253,7 @@
     },
     {
         "note": "lỗi chính tả: Khia (đảo chữ = 2 lỗi)",
-        "address": "88 Nguyễn Thị Minh Khai, Phường Bàn Cờ, Hồ Chí Minh",
+        "address": "88 Mkkiiễn Thị Minh Khai, Phường Bàn Cờ, Hồ Chí Minh",
         "result": {
             "street": "Nguyễn Thị Minh Khai",
             "ward": "Phường Bàn Cờ",
