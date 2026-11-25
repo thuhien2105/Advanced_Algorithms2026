@@ -253,7 +253,7 @@
     },
     {
         "note": "sai 3 ký tự ở 2 từ: Mkuyễn (có ký tự đầu), Lhai",
-        "address": "88 Ng T Minh Lhai, Phường Tàn Lờ, Hồ Chí Minh",
+        "address": "88 Ng T Minh Lhaiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii, Phường Tàn Lờ, Hồ Chí Minh",
         "result": {
             "street": "Nguyễn Thị Minh Khai",
             "ward": "Phường Bàn Cờ",
@@ -715,6 +715,51 @@
         "address": "Ng, Phường Bàn Cờ, Hồ Chí Minh",
         "result": {
             "street": "",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "ký tự lặp dài + viết tắt Ng, T",
+        "address": "88 Ng T Minh khaiiiiiiiiiiiiiiiiiiiiiiiiiiiii, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "ký tự lặp ở nhiều từ",
+        "address": "88 Nguyễn Thịịịịị Minh Khaaaaai, Phường Bànnnn Cờ, Hồ Chíííí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "ký tự rác chen giữa, tách đôi từ (Kh*ai)",
+        "address": "88 Ng@ T# Minh Kh*ai, P.Bàn~Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "ghi chú dài trước + sau, viết tắt có dấu chấm",
+        "address": "hàng dễ vỡ xin nhẹ tay!!! 88 Ng. T. Minh Khai, P. Bàn Cờ, TP.HCMMMMM, sđt 0909xxxxxx, giao sau 5h chiều",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thứ tự đảo + ký tự lặp",
+        "address": "Phường Bàn Cờ, Hồ Chí Minh, 88 Ng T Minhhhhhhhh Khaiiiiiii",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
             "ward": "Phường Bàn Cờ",
             "province": "Thành phố Hồ Chí Minh"
         }

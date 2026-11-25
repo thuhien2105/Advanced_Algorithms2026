@@ -114,6 +114,7 @@ class Solution:
         "kh": ("khanh", "khai"),
     }
     ABBREV_ORDER_PENALTY = 0.01    # cùng số lỗi: ưu tiên giá trị đứng trước trong bảng
+    ABBREV_COST = 0.3              # mỗi từ viết tắt ở giữa tên ("T" -> Thị): nhẹ hơn 1 lỗi ký tự
 
 
     @staticmethod
@@ -236,9 +237,11 @@ class Solution:
         S, A, O, tokens = [], [], [], []
         start = -1
         prev_kind, prev_lower = 0, False
+        squash = None
         for ch in unicodedata.normalize("NFC", text):
             base, low = Solution._fold(ch)
             if not base:
+                squash = None
                 if start >= 0:
                     tokens.append((start, len(S)))
                     start = -1
@@ -249,6 +252,20 @@ class Solution:
                 start = -1
             if start < 0:
                 start = len(S)
+            if kind == 2:
+                # chữ cái lặp >= 3 lần liền trong 1 từ ("khaiiiii", "Bànnnn") là nhiễu: gộp còn 1.
+                # Tiếng Việt bỏ dấu không có chữ cái lặp 3 lần; lặp 2 lần để Levenshtein lo.
+                if base == squash:
+                    continue
+                squash = None
+                if len(S) - start >= 2 and S[-1] == base and S[-2] == base:
+                    S.pop()
+                    A.pop()
+                    O.pop()
+                    squash = base
+                    continue
+            else:
+                squash = None
             S.append(base)
             A.append(low)
             O.append(ch)
@@ -534,7 +551,7 @@ class Solution:
         self.holes = {}                 # "thi|minh|khai" + vị trí lỗ -> [(loại, id, độ dài từ gốc, từ gốc)]
         self.loose_by_first = {}        # từ đầu của tên -> [(loại, id, khoá, bigram của khoá)]
         self._first_cache = {}          # từ đầu của input -> [(từ đầu trong DB, số lỗi)]
-        self._rest_bigrams = {}         # id -> bigram của tên bỏ từ đầu (cho từ viết tắt), tính lười
+        self.core_words = []            # id -> các từ (không dấu) của phần tên chính
         self.db_words = set()           # mọi từ (không dấu) xuất hiện trong tên DB
         self._ids = {}
 
@@ -597,6 +614,7 @@ class Solution:
         self.names.append(name)
         self.groups.append(group)
         self.accents.append(A[c0:c1])
+        self.core_words.append(tuple(core_words))
         self.db_words.update(words)
         trie = self.tries[etype]
         if Solution.HOLE_MIN_WORDS <= len(core_words) <= Solution.HOLE_MAX_WORDS:
@@ -660,6 +678,9 @@ class Solution:
             deadline = min(time.perf_counter() + Solution.FUZZY_TIME_BUDGET, t_start + Solution.REQUEST_TIME_BUDGET)
             n_exact = len(units)
             self._collect_holes(ctx, tokens, covered, deadline, units)
+            for s_i, (a, b) in enumerate(tokens):   # từ viết tắt đầu tên ("Ng T Minh Khai")
+                if s_i + 1 < len(tokens) and S[a:b] in Solution.ABBREVIATIONS:
+                    self._collect_abbrev(ctx, tokens, s_i, units)
             for i in range(n - 1, -1, -1):
                 if bound[i]:
                     self._collect(ctx, i, n, (Solution.STREET, Solution.WARD, Solution.PROVINCE), True, units)
@@ -895,8 +916,7 @@ class Solution:
             if not q.isalpha():
                 continue
             if q in Solution.ABBREVIATIONS:
-                self._collect_abbrev(ctx, q, i, k, kb, allowed, bonus, group, out)
-                continue
+                continue   # lượt 2 đã xử lý bằng _collect_abbrev
             window = Solution._bigrams(S[k:k + 48])
             pool = []
             for v, _ in self._first_matches(q):
@@ -930,54 +950,108 @@ class Solution:
                 if score >= Solution.LOOSE_MIN_SCORE:
                     out.append((i, j, t, score, eid))
 
-    def _collect_abbrev(self, ctx, q, i, k, kb, allowed, bonus, group, out):
-        """Từ đầu là viết tắt ("Ng Thị Minh Khai"): thử mọi từ đầy đủ của q trong ABBREVIATIONS.
-        Từ viết tắt không tính lỗi; phần còn lại của tên khớp neo tại từ kế tiếp, sai <= 40% phần đó."""
+    def _collect_abbrev(self, ctx, tokens, s, out):
+        """Tên bắt đầu bằng từ viết tắt ("Ng T Minh Khai", "Tr. Hưng Đạo"), so khớp THEO TỪ.
+
+        Từ đầu tra bảng ABBREVIATIONS (mọi giá trị đều được thử). Các từ sau: khớp đúng (0), viết tắt
+        1 chữ cái ("T" -> Thị) hoặc từ trong bảng (ABBREV_COST), sai chính tả (Levenshtein, < 60% từ),
+        thiếu từ (độ dài từ) hoặc dư 1 token nhiễu ở giữa (độ dài token). Tổng lỗi (không tính viết tắt)
+        <= 40% độ dài tên; TỪ CUỐI (tên chính) phải khớp, không được viết tắt.
+        """
         S, A, _, bound = ctx
         n = len(S)
-        r0 = kb
-        while r0 < n and not bound[r0]:
-            r0 += 1
-        if r0 >= n:
-            return
-        window = Solution._bigrams(S[r0:r0 + 48])
+        words = [S[a:b] for a, b in tokens]
+        q = words[s]
+        i = tokens[s][0]
+        INF = float("inf")
+        best = {}   # (t, eid) -> (score, j)
+        # lọc nhanh: từ cuối, hoặc >= 2 từ sau từ đầu, phải khớp đúng 1 token / 2 token liền nhau ("Kh*ai")
+        win = set()
+        for x in range(s + 1, min(len(words), s + 9)):
+            win.add(words[x])
+            if x + 1 < len(words):
+                win.add(words[x] + words[x + 1])
+        near = {}   # cache: từ cuối của tên -> có token nào trong cửa sổ sai < 60% không
         for rank, v in enumerate(Solution.ABBREVIATIONS[q]):
-            pool = []
             for t, eid, key, _ in self.loose_by_first.get(v, ()):
-                if t not in allowed:
+                name = self.core_words[eid]
+                m = len(name)
+                if m < 2:
                     continue
-                rest = key[len(v):]
-                if len(rest) < 3:
-                    continue   # "Ng Ha" quá ít thông tin
-                bg = self._rest_bigrams.get(eid)
-                if bg is None:
-                    bg = self._rest_bigrams[eid] = Solution._bigrams(rest)
-                shared = len(bg & window)
-                if shared and shared >= len(bg) - 2 * Solution._loose_budget(len(rest)):
-                    pool.append((shared / len(bg), t, eid, rest))
-            pool.sort(reverse=True)
-            for _, t, eid, rest in pool[:Solution.LOOSE_TOP]:
-                budget = Solution._loose_budget(len(rest))
-                m = Solution._anchored_lev(rest, S, r0, min(n, r0 + len(rest) + budget), bound, budget)
-                if m is None:
+                hit = sum(w in win for w in name[1:])
+                if not (name[-1] in win or hit >= 2 or (hit and self._near_any(name[-1], win, near))):
                     continue
-                edits, j = m
-                if any(c.isdigit() for c in S[r0:j]):
-                    continue
-                score = (j - i) - Solution.LOOSE_EDIT_PENALTY * edits - Solution.LOOSE_PENALTY + bonus + Solution.TYPE_BIAS[t] \
-                    - Solution.ABBREV_ORDER_PENALTY * rank
-                if not bound[i]:
-                    score -= Solution.BOUNDARY_PENALTY
-                if t == Solution.STREET and i > 0 and S[i - 1].isdigit():
-                    score += Solution.HOUSE_NUMBER_BONUS
-                if group is not None and self.groups[eid] == group:
-                    score += Solution.GROUP_BONUS
-                marks = [c for c in A[r0:j] if c > "\x7f"]
-                if marks:   # dấu của phần còn lại phá thế hoà ("Ng Huệ": Nguyễn Huệ / Ngô Huệ)
-                    ref = self.accents[eid]
-                    score += Solution.ACCENT_BONUS * sum(c in ref for c in marks) / len(marks)
-                if score >= Solution.LOOSE_MIN_SCORE:
-                    out.append((i, j, t, score, eid))
+                budget = Solution._loose_budget(len(key))
+                hi = min(len(words), s + m + 2)
+                # dp[a][b]: (lỗi, số viết tắt) tốt nhất khi đã khớp a từ của tên với token s..s+b-1
+                W = hi - s
+                dp = [[None] * (W + 1) for _ in range(m + 1)]
+                dp[1][1] = (0, 1)            # từ đầu = viết tắt q của v
+                last_match = [[False] * (W + 1) for _ in range(m + 1)]
+                for a in range(1, m + 1):
+                    for b in range(1, W + 1):
+                        cur = dp[a][b]
+                        if cur is None:
+                            continue
+                        e, ab = cur
+                        if e > budget:
+                            continue
+                        cands = []
+                        if a < m:
+                            w = name[a]
+                            cands.append((a + 1, b, e + len(w), ab, False))          # thiếu từ w
+                            if b < W:
+                                tok = words[s + b]
+                                if tok == w:
+                                    cands.append((a + 1, b + 1, e, ab, True))
+                                elif tok.isalpha() and (
+                                        (len(tok) == 1 and w[0] == tok) or
+                                        w in Solution.ABBREVIATIONS.get(tok, ())):
+                                    if a + 1 < m:                                 # từ cuối không viết tắt
+                                        cands.append((a + 1, b + 1, e, ab + 1, False))
+                                elif tok.isalpha():
+                                    d = Solution._lev(tok, w)
+                                    if d <= Solution._first_word_budget(len(w)):
+                                        cands.append((a + 1, b + 1, e + d, ab, True))
+                                if b + 1 < W and words[s + b + 1].isalpha():   # từ bị nhiễu tách đôi
+                                    two = tok + words[s + b + 1]
+                                    d = 0 if two == w else Solution._lev(two, w)
+                                    if d <= Solution._first_word_budget(len(w)) // 2:
+                                        cands.append((a + 1, b + 2, e + d, ab, True))
+                        if b < W and 0 < a < m and words[s + b].isalpha() and len(words[s + b]) <= 2:
+                            cands.append((a, b + 1, e + len(words[s + b]), ab, False))  # token nhiễu ngắn
+                        for na, nb, ne, nab, matched in cands:
+                            old = dp[na][nb]
+                            if ne <= budget and (old is None or (ne, nab) < old):
+                                dp[na][nb] = (ne, nab)
+                                last_match[na][nb] = matched
+                for b in range(2, W + 1):
+                    cur = dp[m][b]
+                    if cur is None or not last_match[m][b]:
+                        continue
+                    e, ab = cur
+                    j = tokens[s + b - 1][1]
+                    score = (j - i) - Solution.LOOSE_EDIT_PENALTY * e - Solution.ABBREV_COST * ab \
+                        - Solution.LOOSE_PENALTY + Solution.TYPE_BIAS[t] - Solution.ABBREV_ORDER_PENALTY * rank
+                    if t == Solution.STREET and i > 0 and S[i - 1].isdigit():
+                        score += Solution.HOUSE_NUMBER_BONUS
+                    k0 = tokens[s + 1][0]
+                    marks = [c for c in A[k0:j] if c > "\x7f"]
+                    if marks:   # dấu của phần còn lại phá thế hoà ("Ng Huệ": Nguyễn Huệ / Ngô Huệ)
+                        ref = self.accents[eid]
+                        score += Solution.ACCENT_BONUS * sum(c in ref for c in marks) / len(marks)
+                    if score >= Solution.LOOSE_MIN_SCORE and score > best.get((t, eid), (-INF,))[0]:
+                        best[(t, eid)] = (score, j)
+        for (t, eid), (score, j) in best.items():
+            out.append((i, j, t, score, eid))
+
+    @staticmethod
+    def _near_any(w, win, cache):
+        r = cache.get(w)
+        if r is None:
+            k = Solution._first_word_budget(len(w))
+            r = cache[w] = any(abs(len(x) - len(w)) <= k and Solution._lev(x, w) <= k for x in win)
+        return r
 
     def _collect_acronyms(self, S, tokens, out):
         """Input viết đầy đủ ("Lý Thường Kiệt") nhưng DB lưu viết tắt ("LTK")."""
