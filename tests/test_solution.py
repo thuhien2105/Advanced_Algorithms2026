@@ -71,8 +71,9 @@ class TestTrie(unittest.TestCase):
     def test_fuzzy_sai_ky_tu(self):
         self.assertIn((9, [3], 1), self.trie.fuzzy("hochimimh", 0, 9))
 
-    def test_fuzzy_khoa_ngan_phai_khop_tuyet_doi(self):
-        self.assertEqual([m for m in self.trie.fuzzy("bem", 0, 3) if m[1] == [2]], [])
+    def test_fuzzy_khoa_ngan_cho_1_loi(self):
+        # khoá <= 5 ký tự được 1 lỗi ở mức Trie; _score còn lọc tiếp (dấu, ngưỡng điểm)
+        self.assertIn((3, [2], 1), self.trie.fuzzy("bem", 0, 3))
 
     def test_fuzzy_ky_tu_dau_phai_dung(self):
         self.assertEqual(self.trie.fuzzy("venthanh", 0, 8), [])

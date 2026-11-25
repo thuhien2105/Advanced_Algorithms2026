@@ -189,11 +189,9 @@ class TestFormatNop(unittest.TestCase):
         self.assertEqual(json.loads(text), [record])
 
     def test_gia_tri_tra_ve_lay_nguyen_van_trong_db(self):
-        db = {}
-        for field, path in (("street", self.solver.street_path), ("ward", self.solver.ward_path),
-                            ("province", self.solver.province_path)):
-            with open(path, encoding="utf-8-sig") as f:
-                db[field] = {line.strip() for line in f}
+        db = {field: {line.strip() for line in names} for field, names in (
+            ("street", self.solver.list_street), ("ward", self.solver.list_ward),
+            ("province", self.solver.list_province))}
         with open(CASES_PATH, encoding="utf-8") as f:
             addresses = [c["address"] for c in json.load(f)] + [a for _, a, _ in IRREGULAR]
         for address in addresses:
@@ -211,13 +209,30 @@ class TestFormatNop(unittest.TestCase):
 
     def test_db_toi_da_34_tinh_utf8(self):
         # slide 7: tổng 34 tỉnh; DB public của thầy chỉ có 32 nên chỉ kiểm tra không quá 34
-        for path in (self.solver.province_path, self.solver.ward_path, self.solver.street_path):
+        for fname in ("list_province.txt", "list_ward.txt", "list_street.txt"):
+            path = os.path.join(ROOT, "data", fname)
             with open(path, "rb") as f:
                 raw = f.read()
             self.assertTrue(raw.strip(), path)
             raw.decode("utf-8")
-        with open(self.solver.province_path, encoding="utf-8-sig") as f:
-            self.assertLessEqual(len([line for line in f if line.strip()]), 34)
+        self.assertLessEqual(len([line for line in self.solver.list_province if line.strip()]), 34)
+
+    def test_khoi_tao_giong_notebook_cham_diem(self):
+        # cell chấm của thầy: đọc file bằng f.read().strip().splitlines() rồi truyền LIST vào Solution
+        lists = {}
+        for key in ("province", "ward", "street"):
+            with open(os.path.join(ROOT, "data", "list_%s.txt" % key), encoding="utf-8") as f:
+                lists["list_" + key] = f.read().strip().splitlines()
+        solver = Solution(**lists)
+        self.assertEqual(solver.process(BASE), {"street": NKKN, "ward": BT, "province": HCM})
+
+    def test_notebook_chi_co_class_solution(self):
+        # hướng dẫn nộp bài: mọi hàm / hằng số mới phải nằm trong class Solution
+        with open(os.path.join(ROOT, "solution.py"), encoding="utf-8") as f:
+            src = f.read()
+        cell = src[src.index("class Solution:"):src.index("# ==== HẾT PHẦN NỘP")]
+        top = [n for n in ast.parse(cell).body]
+        self.assertEqual([type(n).__name__ for n in top], ["ClassDef"])
 
     def test_chay_duoc_khi_dung_o_thu_muc_khac(self):
         # máy chấm có thể chạy từ thư mục khác: Solution() phải tự tìm data/ cạnh solution.py

@@ -252,8 +252,8 @@
         }
     },
     {
-        "note": "lỗi chính tả: Khia (đảo chữ = 2 lỗi)",
-        "address": "88 Mkkiiễn Thị Minh Khai, Phường Bàn Cờ, Hồ Chí Minh",
+        "note": "sai 3 ký tự ở 2 từ: Mkuyễn (có ký tự đầu), Lhai",
+        "address": "88 Ng T Minh Lhai, Phường Tàn Lờ, Hồ Chí Minh",
         "result": {
             "street": "Nguyễn Thị Minh Khai",
             "ward": "Phường Bàn Cờ",
@@ -527,6 +527,195 @@
         "result": {
             "street": "Lê Lợi",
             "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thứ tự đảo ngược: tỉnh -> phường -> đường",
+        "address": "Thành phố Hồ Chí Minh, Phường Bến Thành, 63 Nam Kỳ Khởi Nghĩa",
+        "result": {
+            "street": "Nam Kỳ Khởi Nghĩa",
+            "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thứ tự lộn xộn: phường -> tỉnh -> đường",
+        "address": "Phường Tân Định, TP HCM, 12 Hai Bà Trưng",
+        "result": {
+            "street": "Hai Bà Trưng",
+            "ward": "Phường Tân Định",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thứ tự đảo, không tiền tố",
+        "address": "Hà Nội, Phường Hoàn Kiếm, Tràng Tiền",
+        "result": {
+            "street": "Tràng Tiền",
+            "ward": "Phường Hoàn Kiếm",
+            "province": "Thành phố Hà Nội"
+        }
+    },
+    {
+        "note": "thứ tự lộn xộn, không dấu phẩy",
+        "address": "TP Đà Nẵng 25 Bạch Đằng P Hải Châu",
+        "result": {
+            "street": "Bạch Đằng",
+            "ward": "Phường Hải Châu",
+            "province": "Thành phố Đà Nẵng"
+        }
+    },
+    {
+        "note": "thứ tự đảo, không có đường",
+        "address": "TP HCM, Xã Củ Chi",
+        "result": {
+            "street": "",
+            "ward": "Xã Củ Chi",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "tiền tố sai nhóm: Xã cho phường, Tỉnh cho thành phố",
+        "address": "63 Nam Kỳ Khởi Nghĩa, Xã Bến Thành, Tỉnh Hồ Chí Minh",
+        "result": {
+            "street": "Nam Kỳ Khởi Nghĩa",
+            "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "tiền tố tráo giữa 2 trường: Thành phố trước phường, Phường trước tỉnh",
+        "address": "63 Nam Kỳ Khởi Nghĩa, Thành phố Bến Thành, Phường Hồ Chí Minh",
+        "result": {
+            "street": "Nam Kỳ Khởi Nghĩa",
+            "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "tiền tố Phường cho xã, thứ tự đảo",
+        "address": "Thành phố Hà Nội, Phường Bát Tràng",
+        "result": {
+            "street": "",
+            "ward": "Xã Bát Tràng",
+            "province": "Thành phố Hà Nội"
+        }
+    },
+    {
+        "note": "sai 3 ký tự ở 2 từ (~18%): Mhuyễn, Lai",
+        "address": "88 Mhuyễn Thị Minh Lai, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thiếu 4 ký tự rải rác (~24%)",
+        "address": "88 Ngyn Th Mnh Kai, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thiếu 1 từ: Nam Kỳ Nghĩa (thiếu Khởi, ~29%)",
+        "address": "63 Nam Kỳ Nghĩa, P. Bến Thành, TP HCM",
+        "result": {
+            "street": "Nam Kỳ Khởi Nghĩa",
+            "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thiếu 1 từ ở phường: Cầu Lãnh (thiếu Ông)",
+        "address": "Phường Cầu Lãnh, TP HCM",
+        "result": {
+            "street": "",
+            "ward": "Phường Cầu Ông Lãnh",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "sai 2 ký tự + thiếu chữ, thứ tự đảo",
+        "address": "TP HCM, P. Bến Thàn, 63 Nam Ky Khi Nghia",
+        "result": {
+            "street": "Nam Kỳ Khởi Nghĩa",
+            "ward": "Phường Bến Thành",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thiếu 2 ký tự (~18%)",
+        "address": "45 Trần Hưg Đạ, Phường Cầu Ông Lãnh, HCM",
+        "result": {
+            "street": "Trần Hưng Đạo",
+            "ward": "Phường Cầu Ông Lãnh",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "từ đầu sai 4/6 (67% >= 60%): bỏ, không map về Nguyễn Thị Minh Khai",
+        "address": "88 Bkkxễn Thị Minh Khai, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "thiếu 8/17 ký tự (47% > 40%): không map",
+        "address": "88 Ngyn Th Mh K, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "viết tắt Ng -> Nguyễn",
+        "address": "88 Ng Thị Minh Khai, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "viết tắt có dấu chấm: Ng. Huệ",
+        "address": "12 Ng. Huệ, P. Sài Gòn, TP HCM",
+        "result": {
+            "street": "Nguyễn Huệ",
+            "ward": "Phường Sài Gòn",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "viết tắt Tr -> Trần, phần còn lại thiếu chữ",
+        "address": "45 Tr. Hưg Đạo, Phường Cầu Ông Lãnh, HCM",
+        "result": {
+            "street": "Trần Hưng Đạo",
+            "ward": "Phường Cầu Ông Lãnh",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "viết tắt + thiếu chữ ở các từ sau",
+        "address": "88 Ng Th Mnh Khai, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "Nguyễn Thị Minh Khai",
+            "ward": "Phường Bàn Cờ",
+            "province": "Thành phố Hồ Chí Minh"
+        }
+    },
+    {
+        "note": "chỉ có từ viết tắt, không đủ thông tin: không map",
+        "address": "Ng, Phường Bàn Cờ, Hồ Chí Minh",
+        "result": {
+            "street": "",
+            "ward": "Phường Bàn Cờ",
             "province": "Thành phố Hồ Chí Minh"
         }
     }

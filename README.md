@@ -64,13 +64,31 @@ solver = Solution()   # đọc data/list_province.txt, data/list_ward.txt, data/
 print(solver.process("45 Lê Lơi, P. Bến Thàn, TP.HCM"))
 # {'street': 'Lê Lợi', 'ward': 'Phường Bến Thành', 'province': 'Thành phố Hồ Chí Minh'}
 
-# DB ở chỗ khác:
+# Giống cell chấm điểm của notebook: truyền LIST tên
+solver = Solution(list_province=[...], list_ward=[...], list_street=[...])
+
+# hoặc DB ở chỗ khác (đường dẫn file):
 solver = Solution(province_path="db/provinces.txt",
                   ward_path="db/wards.txt",
                   street_path="db/streets.txt")
 ```
 
 Khởi tạo `Solution()` (đọc DB, dựng Trie) chỉ làm **một lần**, sau đó gọi `process()` cho từng request.
+Cell chấm điểm của thầy cũng chỉ bấm giờ quanh `solution.process(address)`, không tính `__init__`.
+
+### 2.1b. Nộp bài (notebook Colab)
+
+Theo hướng dẫn nộp: copy `GettingStarted_v2.ipynb`, đổi tên `Group_xx`, sửa cell 1–5, mọi hàm / hằng số mới
+phải nằm **trong `class Solution`**, 2 cell cuối (tải public test + chấm) giữ nguyên.
+Template gốc lưu ở `notebook/GettingStarted_v2.ipynb`. Notebook nộp được sinh từ `solution.py`
+(phần từ `class Solution:` tới dòng `# ==== HẾT PHẦN NỘP`):
+
+```
+python tools/build_notebook.py --team Group_07   # -> notebook/Group_07.ipynb + notebook/Group_07.py
+```
+
+Không dùng DB riêng (cell 2) và không cần `pip install` (cell 3): chỉ dùng thư viện chuẩn.
+Sửa `solution.py` xong thì chạy lại lệnh trên để cập nhật notebook.
 
 ### 2.2. Chạy test
 
@@ -196,6 +214,23 @@ Các tên chung tiền tố dùng chung phần tính toán. Để nhanh và ít 
 - không sửa lỗi phần chữ số (`Phường 14` không thành `Phường 12`);
 - không sửa lỗi khi đoạn bắt đầu bằng một từ khoá (`phuong` không thành tên `Phú Long`).
 
+**Lượt 3, khớp lỏng** (chỉ chạy khi vẫn còn chữ chưa giải thích và còn trường chưa gán). Cho phép
+**sai / thiếu tới 40%** số ký tự của tên, kể cả thiếu nguyên một từ (`Nam Kỳ Nghĩa` → Nam Kỳ Khởi Nghĩa):
+1. Chỉ bắt đầu ở từ **chưa được giải thích**: không thuộc trường đã chọn và không khớp chính xác một tên DB
+   nào (`Ba Đình` là tên phường có thật thì không bị "sửa" thành tên đường khác).
+2. **Từ đầu** của input phải khớp từ đầu của tên DB với **sai < 60%** (sai 60–80% thì bỏ, xét ứng viên khác).
+   Tra bằng chỉ mục xoá ký tự kiểu SymSpell nên chỉ tốn vài phép tra dict.
+3. Các tên có từ đầu đó được lọc bằng số **bigram** chung (mỗi lỗi làm mất tối đa 2 bigram), lấy 15 tên
+   nhiều bigram chung nhất, rồi tính Levenshtein neo ở đầu từ, kết thúc ở ranh giới từ: tổng lỗi ≤ 40%.
+4. Chỉ áp dụng cho tên ≥ 5 ký tự; tên ngắn có dấu mà khác dấu với DB thì bỏ (`Lê Lai` ≠ `Lê Lợi`).
+5. **Từ viết tắt** (`Ng`, `Tr`, `Ph`, `Hg`...): mất > 60% nên không qua bước 2, được tra bảng
+   `ABBREVIATIONS`. Một viết tắt có nhiều giá trị (`Ng` → Nguyễn / Ngô / Nghiêm): thử **tất cả**. Từ viết tắt
+   không tính lỗi, phần còn lại của tên (≥ 3 ký tự) phải sai ≤ 40%, và **tên gần nhất** (ít lỗi nhất, hợp dấu
+   nhất) thắng. Hoà thì ưu tiên giá trị đứng trước trong bảng. `Ng Thị Minh Khai` → Nguyễn Thị Minh Khai,
+   `Ph Văn Trị` → Phan Văn Trị, `Ph Văn Đồng` → Phạm Văn Đồng.
+
+Điểm của ứng viên lượt 3: `số ký tự phủ − 1.0 × số lỗi − 1.0` (+ các thưởng tiền tố / số nhà như dưới).
+
 ### 3.4. Chấm điểm một ứng viên
 
 ```
@@ -214,14 +249,15 @@ Khi nhiều tên trong DB trùng khoá không dấu (`Phường Bình Thạnh` /
 
 ### 3.5. Quy hoạch động chọn kết quả
 
-Chọn một tập ứng viên **không chồng nhau**, đúng thứ tự trong địa chỉ Việt Nam
-**street → ward → province** (mỗi loại tối đa 1), sao cho tổng điểm lớn nhất:
+Chọn một tập ứng viên **không chồng nhau**, mỗi loại tối đa 1, **thứ tự tuỳ ý** (tỉnh không bắt buộc
+đứng cuối: `TP HCM, P. Bến Thành, 63 Nam Kỳ Khởi Nghĩa` vẫn đúng), sao cho tổng điểm lớn nhất. Thứ tự
+chuẩn **street → ward → province** chỉ được thưởng nhỏ `ORDER_BONUS = 0.3` để phá thế hoà:
 
 ```
-best[p][st] = điểm lớn nhất khi đã đọc xong S[:p], st = 0 (chưa gán gì) hoặc 1 + loại vừa gán
+best[p][st] = điểm lớn nhất khi đã đọc xong S[:p], st = (tập loại đã gán, loại vừa gán)
 
-best[p+1][st] ← best[p][st]                       # bỏ qua ký tự S[p] (số nhà, chữ nhiễu...)
-best[j][t+1]  ← best[i][st] + điểm(i, j, t)       # nhận ứng viên S[i:j] loại t, với st ≤ t
+best[p+1][st] ← best[p][st]                                  # bỏ qua ký tự S[p] (số nhà, chữ nhiễu...)
+best[j][st']  ← best[i][st] + điểm(i, j, t) (+ ORDER_BONUS)  # nhận ứng viên S[i:j] loại t chưa gán
 ```
 
 Truy vết ngược từ `max(best[n][·])` để lấy 3 trường. Nhờ DP nên các trường hợp nhập nhằng được
@@ -230,7 +266,7 @@ giải quyết theo toàn cục, không theo từng đoạn riêng lẻ:
 - `30 Hai Bà Trưng, Phường Tân Định, TP HCM`: "Hai Bà Trưng" là **đường** (vì phía sau còn phường).
 - `Phường Hai Bà Trưng, Hà Nội`: "Hai Bà Trưng" là **phường** (có tiền tố "Phường").
 - `Điện Biên Phủ, Phường Gia Định, TP HCM`: là đường Điện Biên Phủ, **không** phải tỉnh Điện Biên
-  (tỉnh phải đứng cuối, và tên dài hơn được nhiều điểm hơn).
+  (mỗi loại chỉ 1 lần nên tỉnh đã là HCM, và tên dài hơn được nhiều điểm hơn).
 
 ### 3.6. Độ phức tạp mỗi request
 
@@ -239,7 +275,9 @@ Với `n` ≈ 30–80 ký tự và `L` là độ dài tên dài nhất:
 - Lượt 2: O(số đầu từ × số nút Trie được duyệt × 5); nhờ cắt nhánh nên chỉ duyệt một phần rất nhỏ của Trie.
   Lượt này duyệt từ cuối chuỗi và dừng khi hết `FUZZY_TIME_BUDGET = 0.04 s`, để input rất dài
   (kèm ghi chú hàng trăm ký tự) vẫn dưới 0.1 s. Địa chỉ bình thường chỉ tốn vài ms nên không chạm ngưỡng này.
-- DP: O(4n + 4 × số ứng viên).
+- Lượt 3: mỗi từ chưa giải thích: vài chục phép tra dict (SymSpell) + lọc bigram + tối đa 15 lần
+  Levenshtein O(L²). Dùng chung hạn chót thời gian với lượt 2.
+- DP: O(32n + 32 × số ứng viên) (32 trạng thái = tập loại đã gán × loại vừa gán).
 
 ---
 

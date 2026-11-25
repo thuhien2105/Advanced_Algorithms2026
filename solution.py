@@ -16,402 +16,555 @@ Thuật toán (chi tiết ở README.md):
   3. Ứng viên  : từ mỗi vị trí i trên S, đi dọc Trie để lấy mọi đoạn S[i:j] khớp một tên.
                  Trường nào vẫn thiếu thì đi Trie kèm bảng Levenshtein (DP trên từng nút Trie)
                  để bắt lỗi chính tả.
-  4. DP        : best[j][t] = điểm cao nhất khi đã đọc xong S[:j] và loại cuối cùng đã gán là t,
-                 với thứ tự bắt buộc street -> ward -> province. Mỗi bước: bỏ qua 1 ký tự (0 điểm)
+                 Còn chữ chưa giải thích thì khớp LỎNG: từ đầu sai < 60%, cả tên sai/thiếu <= 40%.
+  4. DP        : best[j][state] = điểm cao nhất khi đã đọc xong S[:j]; state = tập loại đã gán + loại
+                 cuối. Mỗi loại tối đa 1 lần, thứ tự TUỲ Ý (tỉnh không bắt buộc đứng cuối); đúng thứ tự
+                 street -> ward -> province chỉ được thưởng nhỏ. Mỗi bước: bỏ qua 1 ký tự (0 điểm)
                  hoặc nhận 1 ứng viên (điểm ~ số ký tự phủ được - phạt lỗi - phạt lệch ranh giới).
 """
 import os
 import time
 import unicodedata
 
-NOT_FOUND = ""  # slide ghi "Null"; đổi thành "Null" hoặc None nếu bộ chấm yêu cầu
-
-STREET, WARD, PROVINCE = 0, 1, 2
-FIELDS = ("street", "ward", "province")
-ANY = -1  # tiền tố cấp huyện cũ: đứng trước loại nào cũng được nhưng không được thưởng
-
-# nhóm tiền tố -> các cách viết. Giữ dấu để không nhầm "Dương" (họ) với "Đường",
-# "Phương" (tên) với "Phường"; input không dấu thì so không dấu.
-PREFIXES = {
-    STREET: {"duong": ("đường", "đ", "d"), "pho": ("phố",), "dailo": ("đại lộ",)},
-    WARD: {"phuong": ("phường", "p", "f"), "xa": ("xã", "x"),
-           "thitran": ("thị trấn", "tt"), "dackhu": ("đặc khu", "đk", "dk")},
-    PROVINCE: {"thanhpho": ("thành phố", "tp"), "tinh": ("tỉnh", "t")},
-    ANY: {"": ("quận", "q", "huyện", "h", "thị xã", "tx")},
-}
-
-# Tham số chấm điểm một ứng viên
-EDIT_PENALTY = 2.5             # mỗi lỗi (thêm / xoá / sửa 1 ký tự)
-BOUNDARY_PENALTY = 1.5         # đầu hoặc cuối ứng viên rơi vào giữa một từ
-PREFIX_BONUS = 1.0             # có tiền tố đúng loại ("Phường" đứng trước tên phường)
-ACRONYM_PENALTY = 1.0          # input "Lý Thường Kiệt" khớp với "LTK" trong DB
-HOUSE_NUMBER_BONUS = 2.0       # tên đường đứng ngay sau số nhà ("45 Lê Lợi")
-TYPE_BIAS = (0.01, 0.02, 0.0)  # phá thế hoà: một tên vừa là đường vừa là phường -> chọn phường
-MAX_EDITS = 2
-FUZZY_TIME_BUDGET = 0.04       # giây cho lượt tìm gần đúng, để input rất dài vẫn dưới 0.1 s / request
-REQUEST_TIME_BUDGET = 0.06     # hạn chót lượt 2, tính từ ĐẦU request (máy chậm thì lượt 1 lâu hơn, lượt 2 ngắn lại)
-
-# Sửa lỗi NGAY KÝ TỰ ĐẦU ("Kguyễn Huệ", "guyễn Huệ", "XNguyễn Huệ")
-HEAD_FIX = True
-HEAD_ANCHOR = 4                # sau ký tự đầu sai, ANCHOR ký tự kế phải khớp chính xác, lệch là bỏ nhánh
-HEAD_MIN_LEN = 10              # chỉ sửa ký tự đầu cho tên dài (tên ngắn đổi chữ đầu dễ ra tên khác có thật)
-HEAD_DEL_MIN_LEN = 6           # riêng kiểu MẤT chữ đầu ("uân Trúc" -> Xuân Trúc) cho tên ngắn hơn
-HEAD_PENALTY = 1.0             # phạt thêm ngoài EDIT_PENALTY: lỗi ký tự đầu ít gặp hơn lỗi giữa từ
-HEAD_DEL_PENALTY = 0.0         # như trên, cho kiểu mất chữ đầu
-
-# Tiền tố viết sai 1 lỗi ("piuong", "Phưường", "Puong", "Thàn phố")
-FUZZY_PREFIX_MIN_LEN = 6       # chỉ các tiền tố dài: phuong, thanhpho, thitran, dackhu
-FUZZY_PREFIX_PENALTY = 1.5     # thay cho PREFIX_BONUS
-
-# Tên khớp gần đúng BAO TRỌN một tên khớp chính xác ngắn hơn ("Trịnh Đức ân" ⊃ "Trịnh Đức")
-CONTAIN_BONUS = 0.5            # tên dài được đẩy lên trên tên ngắn đúng bằng chừng này
-ACCENT_BONUS = 0.3             # tỉ lệ dấu của input khớp dấu của tên DB ("Kháh Văn" -> Khánh Văn, không phải Khải Vân)
-GROUP_BONUS = 0.3              # tiền tố input cùng nhóm với tên DB ("Xã ..." -> tên "Xã ...")
-
-# Khớp theo từ: 1 từ sai hẳn ("Mkkyễn Thị Minh Khai"), các từ còn lại khớp chính xác
-HOLE_MIN_WORDS = 4             # tên DB phải có >= 4 từ (>= 3 từ khớp chính xác)
-HOLE_MAX_WORDS = 6
-HOLE_LEN_DIFF = 2              # độ dài từ sai lệch tối đa so với từ gốc
-HOLE_PENALTY = 2.0             # phạt thêm; ký tự của từ sai cũng không được tính điểm phủ
-
-
-def _allowed_edits(length):
-    """Số lỗi tối đa chấp nhận cho một khoá dài `length` ký tự."""
-    if length <= 5:
-        return 0
-    return 1 if length <= 10 else 2
-
-
-def _prefix_budget(depth):
-    """Cắt nhánh khi duyệt Trie: ký tự đầu phải đúng, tối đa 1 lỗi trong 6 ký tự đầu."""
-    if depth <= 1:
-        return 0
-    return 1 if depth <= 6 else 2
-
-
-_FOLD = {}
-
-
-def _fold(ch):
-    """'Ệ' -> ('e', 'ệ'), 'Đ' -> ('d', 'đ'); ký tự phân cách -> ('', ...)."""
-    r = _FOLD.get(ch)
-    if r is None:
-        low = ch.lower()[:1]
-        base = "d" if low == "đ" else unicodedata.normalize("NFD", low)[0]
-        if not ((base.isascii() and base.isalnum()) or base == "/"):
-            base = ""
-        r = _FOLD[ch] = (base, low)
-    return r
-
-
-def analyze(text):
-    """Chuẩn hoá chuỗi.
-
-    Trả về (S, A, O, bound, tokens):
-      S      chuỗi không dấu, viết thường, không có khoảng trắng / dấu câu
-      A      giống S nhưng còn dấu (để phân biệt "Thạnh" / "Thành")
-      O      ký tự gốc (giữ hoa / thường)
-      bound  bound[i] = 1 nếu giữa S[i-1] và S[i] có ranh giới từ (kể cả i = 0 và i = len(S))
-      tokens danh sách (đầu, cuối) của từng từ trên S. Ngoài dấu cách / dấu câu, còn tách từ
-             khi đổi giữa chữ và số ("45LêLợi") hoặc chữ thường -> chữ hoa ("ThuanThanh").
-    """
-    S, A, O, tokens = [], [], [], []
-    start = -1
-    prev_kind, prev_lower = 0, False
-    for ch in unicodedata.normalize("NFC", text):
-        base, low = _fold(ch)
-        if not base:
-            if start >= 0:
-                tokens.append((start, len(S)))
-                start = -1
-            continue
-        kind = 1 if (base.isdigit() or base == "/") else 2
-        if start >= 0 and (kind != prev_kind or (prev_lower and ch.isupper())):
-            tokens.append((start, len(S)))
-            start = -1
-        if start < 0:
-            start = len(S)
-        S.append(base)
-        A.append(low)
-        O.append(ch)
-        prev_kind, prev_lower = kind, ch.islower()
-    if start >= 0:
-        tokens.append((start, len(S)))
-    bound = bytearray(len(S) + 1)
-    for a, b in tokens:
-        bound[a] = bound[b] = 1
-    return "".join(S), "".join(A), "".join(O), bound, tokens
-
-
-def _initials(words):
-    """["cach", "mang", "thang", "8"] -> "cmt8" (từ là số thì giữ nguyên)."""
-    return "".join(w if w[0].isdigit() else w[0] for w in words)
-
-
-def _hole_key(words, h):
-    """["nguyen", "thi", "minh", "khai"], 0 -> "0|thi|minh|khai" (từ thứ h bị thay bằng lỗ)."""
-    return "%d|%s" % (h, "|".join(words[:h] + words[h + 1:]))
-
-
-def _same_word(plain, acc, want_plain, want_acc):
-    """So một từ với tiền tố: từ có dấu thì phải đúng dấu, từ không dấu thì so không dấu."""
-    return acc == want_acc if acc != plain else plain == want_plain
-
-
-def _prefix_rows():
-    """[(loại, nhóm, các từ không dấu, các từ có dấu)] cho mọi cách viết trong PREFIXES."""
-    rows = []
-    for etype, groups in PREFIXES.items():
-        for group, variants in groups.items():
-            for v in variants:
-                S, A, _, _, toks = analyze(v)
-                rows.append((etype, group, tuple(S[a:b] for a, b in toks), tuple(A[a:b] for a, b in toks)))
-    return rows
-
-
-class Trie:
-    """Trie dạng dict lồng nhau. Khoá None của mỗi nút chứa danh sách id của tên kết thúc tại đó."""
-
-    __slots__ = ("root", "depth")
-
-    def __init__(self):
-        self.root = {}
-        self.depth = 0
-
-    def insert(self, key, value):
-        node = self.root
-        for ch in key:
-            nxt = node.get(ch)
-            if nxt is None:
-                nxt = node[ch] = {}
-            node = nxt
-        values = node.get(None)
-        if values is None:
-            values = node[None] = []
-        if value not in values:
-            values.append(value)
-        self.depth = max(self.depth, len(key))
-
-    def exact(self, s, start, end):
-        """Mọi (j, ids, 0) sao cho s[start:j] là một khoá, j <= end. O(độ dài khoá dài nhất)."""
-        out = []
-        node = self.root
-        for j in range(start, end):
-            node = node.get(s[j])
-            if node is None:
-                break
-            values = node.get(None)
-            if values is not None:
-                out.append((j + 1, values, 0))
-        return out
-
-    def fuzzy(self, s, start, end):
-        """Mọi (j, ids, d) với d = Levenshtein(s[start:j], khoá) <= _allowed_edits(len(khoá)).
-
-        Duyệt DFS trên Trie, mỗi nút giữ một hàng của bảng DP Levenshtein; hàng của nút con
-        tính từ hàng của nút cha nên các khoá chung tiền tố dùng chung phép tính.
-        Chỉ tính trong dải |x - depth| <= MAX_EDITS và cắt nhánh theo _prefix_budget.
-        Bỏ qua khoá chứa chữ số: số phường / số đường phải khớp chính xác.
-        """
-        L = min(end - start, self.depth + MAX_EDITS)
-        if L <= 0:
-            return []
-        INF = MAX_EDITS + 1
-        stack = [(self.root, [x if x <= MAX_EDITS else INF for x in range(L + 1)], 0)]
-        return self._dfs(s[start:start + L], L, start, stack, 0)
-
-    def fuzzy_head(self, s, start, end):
-        """Như fuzzy() nhưng cho phép ký tự ĐẦU sai (đúng 1 lỗi ở đó), không phải duyệt Levenshtein cả Trie.
-
-        Quét MỌI nhánh con của gốc, nhưng mỗi nhánh chỉ đi tiếp HEAD_ANCHOR bước bằng tra dict
-        (khớp chính xác). Lệch ở bước nào thì bỏ nhánh đó, sang nhánh kế. Nhánh nào qua được
-        đoạn neo mới chạy tiếp DFS Levenshtein như fuzzy(). Ba kiểu lỗi ký tự đầu:
-          sửa : input "Kguyen..."  -> nhánh c != s[0], neo theo s[1:]
-          thiếu: input "guyen..."  -> nhánh c bất kỳ,  neo theo s[0:]
-          thừa : input "Xnguyen..." -> đi từ gốc,      neo theo s[1:]
-        Chỉ trả khoá dài >= HEAD_MIN_LEN (kiểu "thiếu": >= HEAD_DEL_MIN_LEN).
-        """
-        L = min(end - start, self.depth + MAX_EDITS)
-        if L <= HEAD_ANCHOR + 1 or not s[start].isalpha():
-            return []
-        seg = s[start:start + L]
-        INF = MAX_EDITS + 1
-        stack, stack_del = [], []
-
-        def anchor(node, used, depth, stack=stack):
-            # đi chính xác HEAD_ANCHOR ký tự seg[used:used+HEAD_ANCHOR] từ `node`
-            for x in range(used, used + HEAD_ANCHOR):
-                node = node.get(seg[x])
-                if node is None:
-                    return
-            used += HEAD_ANCHOR
-            depth += HEAD_ANCHOR
-            # hàng DP: chỉ các cách gióng đi qua điểm neo (1 lỗi ở ký tự đầu)
-            row = [min(INF, 1 + abs(x - used)) for x in range(L + 1)]
-            stack.append((node, row, depth))
-
-        first = seg[0]
-        for c, child in self.root.items():
-            if c is None or not c.isalpha():
-                continue
-            if c != first:
-                anchor(child, 1, 1)          # sửa ký tự đầu
-            anchor(child, 0, 1, stack_del)   # input thiếu ký tự đầu
-        anchor(self.root, 1, 0)              # input thừa ký tự đầu
-        return ([m + (HEAD_PENALTY,) for m in self._dfs(seg, L, start, stack, HEAD_MIN_LEN)]
-                + [m + (HEAD_DEL_PENALTY,) for m in self._dfs(seg, L, start, stack_del, HEAD_DEL_MIN_LEN)])
-
-    def _dfs(self, seg, L, start, stack, min_len):
-        """DFS Levenshtein dùng chung cho fuzzy() và fuzzy_head()."""
-        INF = MAX_EDITS + 1
-        out = []
-        while stack:
-            node, prev, depth = stack.pop()
-            d = depth + 1
-            lo, hi = max(1, d - MAX_EDITS), min(L, d + MAX_EDITS)
-            if lo > hi:
-                continue
-            budget = _prefix_budget(d)
-            for ch, child in node.items():
-                if ch is None or ch.isdigit():
-                    continue
-                row = [INF] * (L + 1)
-                if d <= MAX_EDITS:
-                    row[0] = d
-                best = row[0]
-                for x in range(lo, hi + 1):
-                    v = prev[x - 1] + (seg[x - 1] != ch)   # khớp / sửa
-                    w = prev[x] + 1                        # khoá thừa 1 ký tự
-                    if w < v:
-                        v = w
-                    w = row[x - 1] + 1                     # input thừa 1 ký tự
-                    if w < v:
-                        v = w
-                    if v > INF:
-                        v = INF
-                    row[x] = v
-                    if v < best:
-                        best = v
-                if best > budget:
-                    continue
-                values = child.get(None)
-                if values is not None and d >= min_len:
-                    allowed = _allowed_edits(d)
-                    for x in range(lo, hi + 1):
-                        if row[x] <= allowed:
-                            out.append((start + x, values, row[x]))
-                stack.append((child, row, d))
-        return out
-
-
-def _best_segmentation(n, units):
-    """DP chọn tập ứng viên không chồng nhau, đúng thứ tự street -> ward -> province, tổng điểm lớn nhất.
-
-    units: các bộ (i, j, loại, điểm, id) – ứng viên phủ S[i:j].
-    best[p][st]: điểm tốt nhất sau khi đọc S[:p], st = 0 (chưa gán gì) hoặc 1 + loại vừa gán.
-    Độ phức tạp O(4n + 4·|units|).
-    """
-    NEG = float("-inf")
-    by_start = [[] for _ in range(n + 1)]
-    for u in units:
-        by_start[u[0]].append(u)
-    best = [[NEG] * 4 for _ in range(n + 1)]
-    back = [[None] * 4 for _ in range(n + 1)]
-    best[0][0] = 0.0
-    for p in range(n + 1):
-        cur = best[p]
-        if p < n:  # bỏ qua ký tự S[p]
-            nxt, nback = best[p + 1], back[p + 1]
-            for st in range(4):
-                if cur[st] > nxt[st]:
-                    nxt[st] = cur[st]
-                    nback[st] = (p, st, None)
-        for u in by_start[p]:  # nhận ứng viên bắt đầu tại p
-            j, ns, score = u[1], u[2] + 1, u[3]
-            tgt, tback = best[j], back[j]
-            for st in range(ns):
-                v = cur[st] + score
-                if v > tgt[ns]:
-                    tgt[ns] = v
-                    tback[ns] = (p, st, u)
-    st = max(range(4), key=lambda x: best[n][x])
-    chosen, p = {}, n
-    while p > 0:
-        p, st, u = back[p][st]
-        if u is not None:
-            chosen[u[2]] = u
-    return chosen
-
-
-def _promote_containing(units, n_exact, n, bound):
-    """Ứng viên gần đúng F (lượt 2) bao trọn một ứng viên khớp chính xác E ngắn hơn, cùng loại,
-    và F kết thúc đúng ranh giới từ -> F được ít nhất điểm(E) + CONTAIN_BONUS.
-
-    "Trịnh Đức ân": E = "Trịnh Đức" (khớp đúng, bỏ thừa "ân") thua F = "Trịnh Đức Vân" (1 lỗi).
-    DP vẫn quyết định cuối cùng: nếu phần thừa là một trường khác ("Trịnh Đức, An Phú")
-    thì E + phường vẫn hơn F.
-    """
-    exact_at = [[] for _ in range(n + 1)]
-    for u in units[:n_exact]:
-        exact_at[u[0]].append(u)
-    out = units[:n_exact]
-    for f in units[n_exact:]:
-        fi, fj, ft, fs0 = f[0], f[1], f[2], f[3]
-        fs = fs0
-        if bound[fj]:
-            for p in range(fi, fj):
-                for e in exact_at[p]:
-                    if e[2] != ft or e[4] == f[4] or e[1] > fj or e[1] - e[0] >= fj - fi:
-                        continue  # khác loại / cùng một tên (chỉ là E kéo dài thêm lỗi) / không bao trọn
-                    # lên trên E, nhưng giữ thứ tự điểm gốc giữa các F cùng bao E
-                    v = e[3] + max(0.05, CONTAIN_BONUS + 0.05 * (fs0 - e[3]))
-                    if v > fs:
-                        fs = v
-        out.append(f if fs == fs0 else (fi, fj, ft, fs, f[4]))
-    return out
-
 
 class Solution:
-    def __init__(self, province_path=None, ward_path=None, street_path=None):
-        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-        self.province_path = province_path or os.path.join(data_dir, "list_province.txt")
-        self.ward_path = ward_path or os.path.join(data_dir, "list_ward.txt")
-        self.street_path = street_path or os.path.join(data_dir, "list_street.txt")
+
+    NOT_FOUND = ""  # slide ghi "Null"; đổi thành "Null" hoặc None nếu bộ chấm yêu cầu
+
+    STREET, WARD, PROVINCE = 0, 1, 2
+    FIELDS = ("street", "ward", "province")
+    ANY = -1  # tiền tố cấp huyện cũ: đứng trước loại nào cũng được nhưng không được thưởng
+
+    # nhóm tiền tố -> các cách viết. Giữ dấu để không nhầm "Dương" (họ) với "Đường",
+    # "Phương" (tên) với "Phường"; input không dấu thì so không dấu.
+    PREFIXES = {
+        STREET: {"duong": ("đường", "đ", "d"), "pho": ("phố",), "dailo": ("đại lộ",)},
+        WARD: {"phuong": ("phường", "p", "f"), "xa": ("xã", "x"),
+               "thitran": ("thị trấn", "tt"), "dackhu": ("đặc khu", "đk", "dk")},
+        PROVINCE: {"thanhpho": ("thành phố", "tp"), "tinh": ("tỉnh", "t")},
+        ANY: {"": ("quận", "q", "huyện", "h", "thị xã", "tx")},
+    }
+
+    # Tham số chấm điểm một ứng viên
+    EDIT_PENALTY = 2.5             # mỗi lỗi (thêm / xoá / sửa 1 ký tự)
+    BOUNDARY_PENALTY = 1.5         # đầu hoặc cuối ứng viên rơi vào giữa một từ
+    PREFIX_BONUS = 1.0             # có tiền tố đúng loại ("Phường" đứng trước tên phường)
+    ACRONYM_PENALTY = 1.0          # input "Lý Thường Kiệt" khớp với "LTK" trong DB
+    HOUSE_NUMBER_BONUS = 2.0       # tên đường đứng ngay sau số nhà ("45 Lê Lợi")
+    TYPE_BIAS = (0.01, 0.02, 0.0)  # phá thế hoà: một tên vừa là đường vừa là phường -> chọn phường
+    MAX_EDITS = 2
+    SHORT_NAME_LEN = 5             # tên <= 5 ký tự được sửa 1 lỗi, nhưng phải khớp dấu nếu input có dấu
+    FUZZY_TIME_BUDGET = 0.04       # giây cho lượt tìm gần đúng, để input rất dài vẫn dưới 0.1 s / request
+    REQUEST_TIME_BUDGET = 0.06     # hạn chót lượt 2, tính từ ĐẦU request (máy chậm thì lượt 1 lâu hơn, lượt 2 ngắn lại)
+
+    # Sửa lỗi NGAY KÝ TỰ ĐẦU ("Kguyễn Huệ", "guyễn Huệ", "XNguyễn Huệ")
+    HEAD_FIX = True
+    HEAD_ANCHOR = 4                # sau ký tự đầu sai, ANCHOR ký tự kế phải khớp chính xác, lệch là bỏ nhánh
+    HEAD_MIN_LEN = 10              # chỉ sửa ký tự đầu cho tên dài (tên ngắn đổi chữ đầu dễ ra tên khác có thật)
+    HEAD_DEL_MIN_LEN = 6           # riêng kiểu MẤT chữ đầu ("uân Trúc" -> Xuân Trúc) cho tên ngắn hơn
+    HEAD_PENALTY = 1.0             # phạt thêm ngoài EDIT_PENALTY: lỗi ký tự đầu ít gặp hơn lỗi giữa từ
+    HEAD_DEL_PENALTY = 0.0         # như trên, cho kiểu mất chữ đầu
+
+    # Tiền tố viết sai 1 lỗi ("piuong", "Phưường", "Puong", "Thàn phố")
+    FUZZY_PREFIX_MIN_LEN = 6       # chỉ các tiền tố dài: phuong, thanhpho, thitran, dackhu
+    FUZZY_PREFIX_PENALTY = 1.5     # thay cho PREFIX_BONUS
+
+    # Tên khớp gần đúng BAO TRỌN một tên khớp chính xác ngắn hơn ("Trịnh Đức ân" ⊃ "Trịnh Đức")
+    CONTAIN_BONUS = 0.5            # tên dài được đẩy lên trên tên ngắn đúng bằng chừng này
+    ACCENT_BONUS = 0.3             # tỉ lệ dấu của input khớp dấu của tên DB ("Kháh Văn" -> Khánh Văn, không phải Khải Vân)
+    GROUP_BONUS = 0.3              # tiền tố input cùng nhóm với tên DB ("Xã ..." -> tên "Xã ...")
+
+    # Khớp theo từ: 1 từ sai hẳn ("Mkkyễn Thị Minh Khai"), các từ còn lại khớp chính xác
+    HOLE_MIN_WORDS = 4             # tên DB phải có >= 4 từ (>= 3 từ khớp chính xác)
+    HOLE_MAX_WORDS = 6
+    HOLE_LEN_DIFF = 2              # độ dài từ sai lệch tối đa so với từ gốc
+    HOLE_PENALTY = 2.0             # phạt thêm; ký tự của từ sai cũng không được tính điểm phủ
+
+    # Thứ tự các trường: không bắt buộc, chỉ thưởng khi đúng thứ tự street -> ward -> province
+    ORDER_BONUS = 0.3
+
+    # Khớp LỎNG (lượt 3, chỉ trên phần input chưa được giải thích): sai / thiếu ký tự tới 40% tên,
+    # nhưng TỪ ĐẦU của tên phải sai < 60% (sai 60-80% thì bỏ, xét ứng viên khác)
+    LOOSE_MAX_RATIO = 0.4
+    FIRST_WORD_MAX_RATIO = 0.6     # ngưỡng loại (không tính dấu bằng): lỗi / độ dài từ đầu < 0.6
+    LOOSE_EDIT_PENALTY = 1.0       # mỗi lỗi; nhẹ hơn EDIT_PENALTY vì chỉ chạy ở chỗ chưa có gì khớp
+    LOOSE_PENALTY = 1.0
+    LOOSE_MIN_SCORE = 1.0
+    LOOSE_TOP = 15                 # số ứng viên (xếp theo bigram chung) được kiểm tra Levenshtein mỗi vị trí
+    LOOSE_MIN_LEN = 5              # tên ngắn hơn: 40% chỉ còn 1 lỗi, lượt 2 đã lo
+
+    # Từ viết tắt (không dấu, đã bỏ dấu chấm) -> các từ đầy đủ có thể có, theo thứ tự hay gặp.
+    # Viết tắt mất > 60% ký tự ("Ng" / "Nguyễn" mất 4/6) nên không qua được ngưỡng từ đầu: tra bảng này,
+    # thử MỌI giá trị, phần còn lại của tên vẫn phải sai <= 40%, lấy tên gần nhất (ít lỗi nhất).
+    ABBREVIATIONS = {
+        "ng": ("nguyen", "ngo", "nghiem"),
+        "ngg": ("nguyen",),
+        "nguy": ("nguyen",),
+        "tr": ("tran", "truong", "trinh", "trieu"),
+        "ph": ("pham", "phan", "phung", "phuong"),
+        "hg": ("hoang", "hung", "huong"),
+        "hng": ("hoang", "hung"),
+        "lg": ("luong", "long"),
+        "vg": ("vuong",),
+        "dg": ("duong", "dang"),
+        "qg": ("quang",),
+        "thg": ("thuong", "thang"),
+        "tg": ("tuong", "trung"),
+        "bh": ("binh",),
+        "kh": ("khanh", "khai"),
+    }
+    ABBREV_ORDER_PENALTY = 0.01    # cùng số lỗi: ưu tiên giá trị đứng trước trong bảng
+
+
+    @staticmethod
+    def _allowed_edits(length):
+        """Số lỗi tối đa chấp nhận cho một khoá dài `length` ký tự."""
+        return 1 if length <= 10 else 2
+
+
+    @staticmethod
+    def _loose_budget(length):
+        """Số lỗi tối đa của khớp lỏng cho tên dài `length`: <= 40%."""
+        return int(length * Solution.LOOSE_MAX_RATIO)
+
+
+    @staticmethod
+    def _first_word_budget(length):
+        """Số lỗi tối đa của từ đầu: lỗi / độ dài < 60% (4 ký tự -> 2, 6 -> 3, 7 -> 4)."""
+        return max(0, -(-length * int(Solution.FIRST_WORD_MAX_RATIO * 100) // 100) - 1)   # ceil(60% * length) - 1
+
+
+    @staticmethod
+    def _lev(a, b):
+        """Levenshtein 2 chuỗi ngắn."""
+        prev = list(range(len(b) + 1))
+        for x, ca in enumerate(a, 1):
+            cur = [x]
+            for y, cb in enumerate(b, 1):
+                cur.append(min(prev[y - 1] + (ca != cb), prev[y] + 1, cur[y - 1] + 1))
+            prev = cur
+        return prev[-1]
+
+
+    @staticmethod
+    def _deletes(word, k):
+        """Mọi chuỗi thu được khi xoá tối đa k ký tự của word (kiểu SymSpell)."""
+        out, frontier = {word}, {word}
+        for _ in range(k):
+            frontier = {w[:p] + w[p + 1:] for w in frontier for p in range(len(w))}
+            out |= frontier
+        return out
+
+
+    @staticmethod
+    def _bigrams(s):
+        return frozenset(s[x:x + 2] for x in range(len(s) - 1))
+
+
+    @staticmethod
+    def _anchored_lev(key, S, k, end, bound, budget):
+        """min Levenshtein(key, S[k:x]) với k < x <= end và x là ranh giới từ.
+        Trả (số lỗi, x) hoặc None nếu > budget. Dừng sớm khi cả hàng DP đã vượt budget."""
+        W = end - k
+        if W <= 0:
+            return None
+        prev = list(range(W + 1))
+        for r, c in enumerate(key, 1):
+            cur = [r] + [0] * W
+            low = r
+            for x in range(1, W + 1):
+                v = prev[x - 1] + (S[k + x - 1] != c)
+                w = prev[x] + 1
+                if w < v:
+                    v = w
+                w = cur[x - 1] + 1
+                if w < v:
+                    v = w
+                cur[x] = v
+                if v < low:
+                    low = v
+            if low > budget:
+                return None
+            prev = cur
+        best = None
+        L = len(key)
+        for x in range(1, W + 1):
+            d = prev[x]
+            if d <= budget and bound[k + x]:
+                cand = (d, abs(x - L), x)
+                if best is None or cand < best:
+                    best = cand
+        return None if best is None else (best[0], k + best[2])
+
+
+    @staticmethod
+    def _prefix_budget(depth):
+        """Cắt nhánh khi duyệt Trie: ký tự đầu phải đúng, tối đa 1 lỗi trong 6 ký tự đầu."""
+        if depth <= 1:
+            return 0
+        return 1 if depth <= 6 else 2
+
+
+    _FOLD = {}
+
+
+    @staticmethod
+    def _fold(ch):
+        """'Ệ' -> ('e', 'ệ'), 'Đ' -> ('d', 'đ'); ký tự phân cách -> ('', ...)."""
+        r = Solution._FOLD.get(ch)
+        if r is None:
+            low = ch.lower()[:1]
+            base = "d" if low == "đ" else unicodedata.normalize("NFD", low)[0]
+            if not ((base.isascii() and base.isalnum()) or base == "/"):
+                base = ""
+            r = Solution._FOLD[ch] = (base, low)
+        return r
+
+
+    @staticmethod
+    def analyze(text):
+        """Chuẩn hoá chuỗi.
+
+        Trả về (S, A, O, bound, tokens):
+          S      chuỗi không dấu, viết thường, không có khoảng trắng / dấu câu
+          A      giống S nhưng còn dấu (để phân biệt "Thạnh" / "Thành")
+          O      ký tự gốc (giữ hoa / thường)
+          bound  bound[i] = 1 nếu giữa S[i-1] và S[i] có ranh giới từ (kể cả i = 0 và i = len(S))
+          tokens danh sách (đầu, cuối) của từng từ trên S. Ngoài dấu cách / dấu câu, còn tách từ
+                 khi đổi giữa chữ và số ("45LêLợi") hoặc chữ thường -> chữ hoa ("ThuanThanh").
+        """
+        S, A, O, tokens = [], [], [], []
+        start = -1
+        prev_kind, prev_lower = 0, False
+        for ch in unicodedata.normalize("NFC", text):
+            base, low = Solution._fold(ch)
+            if not base:
+                if start >= 0:
+                    tokens.append((start, len(S)))
+                    start = -1
+                continue
+            kind = 1 if (base.isdigit() or base == "/") else 2
+            if start >= 0 and (kind != prev_kind or (prev_lower and ch.isupper())):
+                tokens.append((start, len(S)))
+                start = -1
+            if start < 0:
+                start = len(S)
+            S.append(base)
+            A.append(low)
+            O.append(ch)
+            prev_kind, prev_lower = kind, ch.islower()
+        if start >= 0:
+            tokens.append((start, len(S)))
+        bound = bytearray(len(S) + 1)
+        for a, b in tokens:
+            bound[a] = bound[b] = 1
+        return "".join(S), "".join(A), "".join(O), bound, tokens
+
+
+    @staticmethod
+    def _initials(words):
+        """["cach", "mang", "thang", "8"] -> "cmt8" (từ là số thì giữ nguyên)."""
+        return "".join(w if w[0].isdigit() else w[0] for w in words)
+
+
+    @staticmethod
+    def _hole_key(words, h):
+        """["nguyen", "thi", "minh", "khai"], 0 -> "0|thi|minh|khai" (từ thứ h bị thay bằng lỗ)."""
+        return "%d|%s" % (h, "|".join(words[:h] + words[h + 1:]))
+
+
+    @staticmethod
+    def _same_word(plain, acc, want_plain, want_acc):
+        """So một từ với tiền tố: từ có dấu thì phải đúng dấu, từ không dấu thì so không dấu."""
+        return acc == want_acc if acc != plain else plain == want_plain
+
+
+    @staticmethod
+    def _prefix_rows():
+        """[(loại, nhóm, các từ không dấu, các từ có dấu)] cho mọi cách viết trong PREFIXES."""
+        rows = []
+        for etype, groups in Solution.PREFIXES.items():
+            for group, variants in groups.items():
+                for v in variants:
+                    S, A, _, _, toks = Solution.analyze(v)
+                    rows.append((etype, group, tuple(S[a:b] for a, b in toks), tuple(A[a:b] for a, b in toks)))
+        return rows
+
+
+    class Trie:
+        """Trie dạng dict lồng nhau. Khoá None của mỗi nút chứa danh sách id của tên kết thúc tại đó."""
+
+        __slots__ = ("root", "depth")
+
+        def __init__(self):
+            self.root = {}
+            self.depth = 0
+
+        def insert(self, key, value):
+            node = self.root
+            for ch in key:
+                nxt = node.get(ch)
+                if nxt is None:
+                    nxt = node[ch] = {}
+                node = nxt
+            values = node.get(None)
+            if values is None:
+                values = node[None] = []
+            if value not in values:
+                values.append(value)
+            self.depth = max(self.depth, len(key))
+
+        def exact(self, s, start, end):
+            """Mọi (j, ids, 0) sao cho s[start:j] là một khoá, j <= end. O(độ dài khoá dài nhất)."""
+            out = []
+            node = self.root
+            for j in range(start, end):
+                node = node.get(s[j])
+                if node is None:
+                    break
+                values = node.get(None)
+                if values is not None:
+                    out.append((j + 1, values, 0))
+            return out
+
+        def fuzzy(self, s, start, end):
+            """Mọi (j, ids, d) với d = Levenshtein(s[start:j], khoá) <= _allowed_edits(len(khoá)).
+
+            Duyệt DFS trên Trie, mỗi nút giữ một hàng của bảng DP Levenshtein; hàng của nút con
+            tính từ hàng của nút cha nên các khoá chung tiền tố dùng chung phép tính.
+            Chỉ tính trong dải |x - depth| <= MAX_EDITS và cắt nhánh theo _prefix_budget.
+            Bỏ qua khoá chứa chữ số: số phường / số đường phải khớp chính xác.
+            """
+            L = min(end - start, self.depth + Solution.MAX_EDITS)
+            if L <= 0:
+                return []
+            INF = Solution.MAX_EDITS + 1
+            stack = [(self.root, [x if x <= Solution.MAX_EDITS else INF for x in range(L + 1)], 0)]
+            return self._dfs(s[start:start + L], L, start, stack, 0)
+
+        def fuzzy_head(self, s, start, end):
+            """Như fuzzy() nhưng cho phép ký tự ĐẦU sai (đúng 1 lỗi ở đó), không phải duyệt Levenshtein cả Trie.
+
+            Quét MỌI nhánh con của gốc, nhưng mỗi nhánh chỉ đi tiếp HEAD_ANCHOR bước bằng tra dict
+            (khớp chính xác). Lệch ở bước nào thì bỏ nhánh đó, sang nhánh kế. Nhánh nào qua được
+            đoạn neo mới chạy tiếp DFS Levenshtein như fuzzy(). Ba kiểu lỗi ký tự đầu:
+              sửa : input "Kguyen..."  -> nhánh c != s[0], neo theo s[1:]
+              thiếu: input "guyen..."  -> nhánh c bất kỳ,  neo theo s[0:]
+              thừa : input "Xnguyen..." -> đi từ gốc,      neo theo s[1:]
+            Chỉ trả khoá dài >= HEAD_MIN_LEN (kiểu "thiếu": >= HEAD_DEL_MIN_LEN).
+            """
+            L = min(end - start, self.depth + Solution.MAX_EDITS)
+            if L <= Solution.HEAD_ANCHOR + 1 or not s[start].isalpha():
+                return []
+            seg = s[start:start + L]
+            INF = Solution.MAX_EDITS + 1
+            stack, stack_del = [], []
+
+            def anchor(node, used, depth, stack=stack):
+                # đi chính xác HEAD_ANCHOR ký tự seg[used:used+HEAD_ANCHOR] từ `node`
+                for x in range(used, used + Solution.HEAD_ANCHOR):
+                    node = node.get(seg[x])
+                    if node is None:
+                        return
+                used += Solution.HEAD_ANCHOR
+                depth += Solution.HEAD_ANCHOR
+                # hàng DP: chỉ các cách gióng đi qua điểm neo (1 lỗi ở ký tự đầu)
+                row = [min(INF, 1 + abs(x - used)) for x in range(L + 1)]
+                stack.append((node, row, depth))
+
+            first = seg[0]
+            for c, child in self.root.items():
+                if c is None or not c.isalpha():
+                    continue
+                if c != first:
+                    anchor(child, 1, 1)          # sửa ký tự đầu
+                anchor(child, 0, 1, stack_del)   # input thiếu ký tự đầu
+            anchor(self.root, 1, 0)              # input thừa ký tự đầu
+            return ([m + (Solution.HEAD_PENALTY,) for m in self._dfs(seg, L, start, stack, Solution.HEAD_MIN_LEN)]
+                    + [m + (Solution.HEAD_DEL_PENALTY,) for m in self._dfs(seg, L, start, stack_del, Solution.HEAD_DEL_MIN_LEN)])
+
+        def _dfs(self, seg, L, start, stack, min_len):
+            """DFS Levenshtein dùng chung cho fuzzy() và fuzzy_head()."""
+            INF = Solution.MAX_EDITS + 1
+            out = []
+            while stack:
+                node, prev, depth = stack.pop()
+                d = depth + 1
+                lo, hi = max(1, d - Solution.MAX_EDITS), min(L, d + Solution.MAX_EDITS)
+                if lo > hi:
+                    continue
+                budget = Solution._prefix_budget(d)
+                for ch, child in node.items():
+                    if ch is None or ch.isdigit():
+                        continue
+                    row = [INF] * (L + 1)
+                    if d <= Solution.MAX_EDITS:
+                        row[0] = d
+                    best = row[0]
+                    for x in range(lo, hi + 1):
+                        v = prev[x - 1] + (seg[x - 1] != ch)   # khớp / sửa
+                        w = prev[x] + 1                        # khoá thừa 1 ký tự
+                        if w < v:
+                            v = w
+                        w = row[x - 1] + 1                     # input thừa 1 ký tự
+                        if w < v:
+                            v = w
+                        if v > INF:
+                            v = INF
+                        row[x] = v
+                        if v < best:
+                            best = v
+                    if best > budget:
+                        continue
+                    values = child.get(None)
+                    if values is not None and d >= min_len:
+                        allowed = Solution._allowed_edits(d)
+                        for x in range(lo, hi + 1):
+                            if row[x] <= allowed:
+                                out.append((start + x, values, row[x]))
+                    stack.append((child, row, d))
+            return out
+
+
+    @staticmethod
+    def _best_segmentation(n, units):
+        """DP chọn tập ứng viên không chồng nhau, mỗi loại tối đa 1, THỨ TỰ TUỲ Ý, tổng điểm lớn nhất.
+
+        units: các bộ (i, j, loại, điểm, id) – ứng viên phủ S[i:j].
+        best[p][st]: điểm tốt nhất sau khi đọc S[:p]; st = mask * 4 + (loại vừa gán + 1),
+        mask = tập loại đã gán. Ứng viên đi sau loại có thứ tự nhỏ hơn (street < ward < province)
+        được + ORDER_BONUS: thứ tự chuẩn chỉ để phá thế hoà, "TP HCM, P. Bến Thành, 12 Lê Lợi" vẫn đúng.
+        Độ phức tạp O(32n + 32·|units|).
+        """
+        NEG = float("-inf")
+        NS = 32
+        by_start = [[] for _ in range(n + 1)]
+        for u in units:
+            by_start[u[0]].append(u)
+        best = [[NEG] * NS for _ in range(n + 1)]
+        back = [[None] * NS for _ in range(n + 1)]
+        best[0][0] = 0.0
+        for p in range(n + 1):
+            cur = best[p]
+            live = [st for st in range(NS) if cur[st] != NEG]
+            if p < n:  # bỏ qua ký tự S[p]
+                nxt, nback = best[p + 1], back[p + 1]
+                for st in live:
+                    if cur[st] > nxt[st]:
+                        nxt[st] = cur[st]
+                        nback[st] = (p, st, None)
+            for u in by_start[p]:  # nhận ứng viên bắt đầu tại p
+                j, t, score = u[1], u[2], u[3]
+                bit = 1 << t
+                tgt, tback = best[j], back[j]
+                for st in live:
+                    mask = st >> 2
+                    if mask & bit:
+                        continue
+                    v = cur[st] + score + (Solution.ORDER_BONUS if t > (st & 3) - 1 else 0.0)
+                    ns = ((mask | bit) << 2) | (t + 1)
+                    if v > tgt[ns]:
+                        tgt[ns] = v
+                        tback[ns] = (p, st, u)
+        st = max(range(NS), key=lambda x: best[n][x])
+        chosen, p = {}, n
+        while p > 0:
+            p, st, u = back[p][st]
+            if u is not None:
+                chosen[u[2]] = u
+        return chosen
+
+
+    @staticmethod
+    def _promote_containing(units, n_exact, n, bound):
+        """Ứng viên gần đúng F (lượt 2) bao trọn một ứng viên khớp chính xác E ngắn hơn, cùng loại,
+        và F kết thúc đúng ranh giới từ -> F được ít nhất điểm(E) + CONTAIN_BONUS.
+
+        "Trịnh Đức ân": E = "Trịnh Đức" (khớp đúng, bỏ thừa "ân") thua F = "Trịnh Đức Vân" (1 lỗi).
+        DP vẫn quyết định cuối cùng: nếu phần thừa là một trường khác ("Trịnh Đức, An Phú")
+        thì E + phường vẫn hơn F.
+        """
+        exact_at = [[] for _ in range(n + 1)]
+        for u in units[:n_exact]:
+            exact_at[u[0]].append(u)
+        out = units[:n_exact]
+        for f in units[n_exact:]:
+            fi, fj, ft, fs0 = f[0], f[1], f[2], f[3]
+            fs = fs0
+            if bound[fj]:
+                for p in range(fi, fj):
+                    for e in exact_at[p]:
+                        if e[2] != ft or e[4] == f[4] or e[1] > fj or e[1] - e[0] >= fj - fi:
+                            continue  # khác loại / cùng một tên (chỉ là E kéo dài thêm lỗi) / không bao trọn
+                        # lên trên E, nhưng giữ thứ tự điểm gốc giữa các F cùng bao E
+                        v = e[3] + max(0.05, Solution.CONTAIN_BONUS + 0.05 * (fs0 - e[3]))
+                        if v > fs:
+                            fs = v
+            out.append(f if fs == fs0 else (fi, fj, ft, fs, f[4]))
+        return out
+
+
+    def __init__(self, list_province=None, list_ward=None, list_street=None,
+                 province_path=None, ward_path=None, street_path=None):
+        """Notebook chấm điểm gọi Solution(list_province=[...], list_ward=[...], list_street=[...]).
+        Chạy ngoài notebook có thể truyền đường dẫn file (*_path); không truyền gì thì đọc data/."""
+        self.list_province = list_province
+        self.list_ward = list_ward
+        self.list_street = list_street
+        try:
+            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        except NameError:   # trong notebook không có __file__
+            data_dir = os.path.join(os.getcwd(), "data")
+        sources = []
+        for names, path, fname in ((list_street, street_path, "list_street.txt"),
+                                   (list_ward, ward_path, "list_ward.txt"),
+                                   (list_province, province_path, "list_province.txt")):
+            if names is None:
+                with open(path or os.path.join(data_dir, fname), encoding="utf-8-sig") as f:
+                    names = f.read().splitlines()
+            sources.append(names)
+        self.list_street, self.list_ward, self.list_province = sources
 
         self.names = []                 # id -> tên gốc trong DB (giá trị trả về)
         self.groups = []                # id -> nhóm tiền tố của tên trong DB ("phuong", "xa"...) hoặc None
         self.accents = []               # id -> phần tên chính: có dấu, viết thường, không khoảng trắng
-        self.tries = (Trie(), Trie(), Trie())
-        self.initials = (Trie(), Trie(), Trie())  # chữ cái đầu của tên DB: "nkkn", "cmt8", "hcm"
+        self.tries = (Solution.Trie(), Solution.Trie(), Solution.Trie())
+        self.initials = (Solution.Trie(), Solution.Trie(), Solution.Trie())  # chữ cái đầu của tên DB: "nkkn", "cmt8", "hcm"
         self.acronyms = ({}, {}, {})    # tên viết tắt trong DB ("LTK") -> so với chữ cái đầu của input
-        self.holes = {}                 # "thi|minh|khai" + vị trí lỗ -> [(loại, id, độ dài từ gốc)]
+        self.holes = {}                 # "thi|minh|khai" + vị trí lỗ -> [(loại, id, độ dài từ gốc, từ gốc)]
+        self.loose_by_first = {}        # từ đầu của tên -> [(loại, id, khoá, bigram của khoá)]
+        self._first_cache = {}          # từ đầu của input -> [(từ đầu trong DB, số lỗi)]
+        self._rest_bigrams = {}         # id -> bigram của tên bỏ từ đầu (cho từ viết tắt), tính lười
         self.db_words = set()           # mọi từ (không dấu) xuất hiện trong tên DB
         self._ids = {}
 
-        self.prefix_rows = _prefix_rows()
-        self.prefixes = Trie()   # khoá không dấu, giá trị (loại, nhóm, dạng có dấu)
+        self.prefix_rows = Solution._prefix_rows()
+        self.prefixes = Solution.Trie()   # khoá không dấu, giá trị (loại, nhóm, dạng có dấu)
         for etype, group, plain, acc in self.prefix_rows:
             self.prefixes.insert("".join(plain), (etype, group, "".join(acc)))
         self.prefix_words = {w for _, _, plain, _ in self.prefix_rows for w in plain}
 
-        for etype, path in ((STREET, self.street_path), (WARD, self.ward_path),
-                            (PROVINCE, self.province_path)):
-            with open(path, encoding="utf-8-sig") as f:
-                for line in f:
-                    name = line.strip()
-                    if name and not name.startswith("#"):
-                        self._add(etype, name)
+        for etype, names in zip((Solution.STREET, Solution.WARD, Solution.PROVINCE), sources):
+            for line in names:
+                name = line.strip().lstrip("﻿").strip()
+                if name and not name.startswith("#"):
+                    self._add(etype, name)
         self.fuzzy_prefixes = self._build_fuzzy_prefixes()
+        # chỉ mục xoá ký tự của các từ đầu (SymSpell): tra từ đầu sai < 60% bằng vài phép tra dict
+        self.first_index = {}
+        for v in self.loose_by_first:
+            for d in Solution._deletes(v, Solution._first_word_budget(len(v))):
+                self.first_index.setdefault(d, []).append(v)
 
     def _build_fuzzy_prefixes(self):
         """Mọi cách viết sai 1 lỗi (thêm / xoá / sửa / đảo, không đụng ký tự đầu) của các tiền tố dài.
         Bỏ cách viết trùng một từ có trong DB ("phung" ~ "phuong" nhưng Phùng là họ) hoặc trùng tiền tố khác."""
         letters = "abcdefghijklmnopqrstuvwxyz"
         exact = {"".join(plain) for _, _, plain, _ in self.prefix_rows}
-        trie = Trie()
+        trie = Solution.Trie()
         for etype, group, plain, acc in self.prefix_rows:
             word = "".join(plain)
-            if etype == ANY or len(word) < FUZZY_PREFIX_MIN_LEN:
+            if etype == Solution.ANY or len(word) < Solution.FUZZY_PREFIX_MIN_LEN:
                 continue
             variants = set()
             for p in range(1, len(word) + 1):
@@ -430,7 +583,7 @@ class Solution:
     def _add(self, etype, name):
         if (etype, name) in self._ids:
             return
-        S, A, O, _, toks = analyze(name)
+        S, A, O, _, toks = Solution.analyze(name)
         if not toks:
             return
         words = [S[a:b] for a, b in toks]
@@ -446,12 +599,14 @@ class Solution:
         self.accents.append(A[c0:c1])
         self.db_words.update(words)
         trie = self.tries[etype]
-        if HOLE_MIN_WORDS <= len(core_words) <= HOLE_MAX_WORDS:
+        if Solution.HOLE_MIN_WORDS <= len(core_words) <= Solution.HOLE_MAX_WORDS:
             for h, w in enumerate(core_words):
                 if w.isalpha():
-                    self.holes.setdefault(_hole_key(core_words, h), []).append((etype, eid, len(w)))
+                    self.holes.setdefault(Solution._hole_key(core_words, h), []).append((etype, eid, len(w), w))
+        if core_words[0].isalpha() and key.isalpha() and len(key) >= Solution.LOOSE_MIN_LEN:
+            self.loose_by_first.setdefault(core_words[0], []).append((etype, eid, key, Solution._bigrams(key)))
 
-        if etype != STREET and (len(key) <= 2 or not any(c.isalpha() for c in key)):
+        if etype != Solution.STREET and (len(key) <= 2 or not any(c.isalpha() for c in key)):
             # "Phường 1", "Phường 12": tên quá ngắn / toàn số -> bắt buộc đi kèm tiền tố ("p1", "f12"...)
             for pt, g, plain, _ in self.prefix_rows:
                 if pt == etype and (group is None or g == group):
@@ -459,8 +614,8 @@ class Solution:
             return
 
         trie.insert(key, eid)
-        if len(core_words) >= 3 or (etype == PROVINCE and group == "thanhpho" and len(core_words) == 2):
-            self.initials[etype].insert(_initials(core_words), eid)   # "hcm", "hn", "nkkn", "cmt8"
+        if len(core_words) >= 3 or (etype == Solution.PROVINCE and group == "thanhpho" and len(core_words) == 2):
+            self.initials[etype].insert(Solution._initials(core_words), eid)   # "hcm", "hn", "nkkn", "cmt8"
         contiguous = all(core[k][1] == core[k + 1][0] for k in range(len(core) - 1))
         if contiguous and O[c0:c1].isupper() and 2 <= c1 - c0 <= 8:
             self.acronyms[etype].setdefault(key, []).append(eid)   # DB lưu "LTK", "CMT8"
@@ -472,15 +627,15 @@ class Solution:
         for pt, group, plain, acc in self.prefix_rows:
             m = len(plain)
             if pt == etype and best_len < m < len(words) and all(
-                    _same_word(words[x], accs[x], plain[x], acc[x]) for x in range(m)):
+                    Solution._same_word(words[x], accs[x], plain[x], acc[x]) for x in range(m)):
                 best_group, best_len = group, m
         return best_group, best_len
 
     # ------------------------------------------------------------------ xử lý 1 request
     def process(self, s):
         t_start = time.perf_counter()
-        result = {f: NOT_FOUND for f in FIELDS}
-        S, A, O, bound, tokens = analyze(s or "")
+        result = {f: Solution.NOT_FOUND for f in Solution.FIELDS}
+        S, A, O, bound, tokens = Solution.analyze(s or "")
         n = len(S)
         if n == 0:
             return result
@@ -489,9 +644,9 @@ class Solution:
         # Lượt 1: chỉ khớp chính xác (rất nhanh)
         units = []
         for i in range(n):
-            self._collect(ctx, i, n, (STREET, WARD, PROVINCE), False, units)
+            self._collect(ctx, i, n, (Solution.STREET, Solution.WARD, Solution.PROVINCE), False, units)
         self._collect_acronyms(S, tokens, units)
-        chosen = _best_segmentation(n, units)
+        chosen = Solution._best_segmentation(n, units)
 
         # Lượt 2: còn chữ cái nào chưa được giải thích thì tìm gần đúng (Levenshtein trên Trie)
         # từ mọi đầu từ. Chạy cả khi lượt 1 đã đủ 3 trường, vì lượt 1 có thể chỉ khớp được một tên
@@ -502,32 +657,44 @@ class Solution:
         for u in chosen.values():
             covered[u[0]:u[1]] = b"\x01" * (u[1] - u[0])
         if any(S[p].isalpha() and not covered[p] for p in range(n)):
-            deadline = min(time.perf_counter() + FUZZY_TIME_BUDGET, t_start + REQUEST_TIME_BUDGET)
+            deadline = min(time.perf_counter() + Solution.FUZZY_TIME_BUDGET, t_start + Solution.REQUEST_TIME_BUDGET)
             n_exact = len(units)
             self._collect_holes(ctx, tokens, covered, deadline, units)
             for i in range(n - 1, -1, -1):
                 if bound[i]:
-                    self._collect(ctx, i, n, (STREET, WARD, PROVINCE), True, units)
+                    self._collect(ctx, i, n, (Solution.STREET, Solution.WARD, Solution.PROVINCE), True, units)
                     if time.perf_counter() > deadline:
                         break
-            units = _promote_containing(units, n_exact, n, bound)
-            chosen = _best_segmentation(n, units)
+            units = Solution._promote_containing(units, n_exact, n, bound)
+            chosen = Solution._best_segmentation(n, units)
+
+            # Lượt 3: vẫn còn chữ chưa giải thích -> khớp lỏng (sai / thiếu tới 40%, từ đầu sai < 60%)
+            # "đã giải thích" = phần được chọn + mọi đoạn khớp CHÍNH XÁC một tên DB (kể cả không được chọn,
+            # vd "Ba Đình" khi phường đã là Ngọc Hà): tên có thật thì không phải lỗi chính tả
+            covered = bytearray(n)
+            for u in list(chosen.values()) + units[:n_exact]:
+                covered[u[0]:u[1]] = b"\x01" * (u[1] - u[0])
+            if len(chosen) < 3 and time.perf_counter() < deadline and \
+                    any(S[p].isalpha() and not covered[p] for p in range(n)):
+                types = tuple(t for t in (Solution.STREET, Solution.WARD, Solution.PROVINCE) if t not in chosen)
+                self._collect_loose(ctx, tokens, covered, types, deadline, units)
+                chosen = Solution._best_segmentation(n, units)
 
         for t, u in chosen.items():
-            result[FIELDS[t]] = self.names[u[4]]
+            result[Solution.FIELDS[t]] = self.names[u[4]]
         return result
 
     def _collect(self, ctx, i, end, types, fuzzy, out):
         """Sinh ứng viên bắt đầu tại i; tên có thể đi sau một tiền tố hành chính ("P.", "Tỉnh"...)."""
         S, A, O, bound = ctx
-        starts = [(i, None, PREFIX_BONUS)]
+        starts = [(i, None, Solution.PREFIX_BONUS)]
         keyword = False  # từ tại i là nguyên một tiền tố ("phuong", "tp", "quan"...)
         for k, infos, _ in self.prefixes.exact(S, i, end):
             acc = A[i:k]
             if acc != S[i:k]:  # input có dấu: cho sai 1 dấu ("Phuờng"), nhưng "Dương" (2 dấu) ≠ "Đường"
                 infos = [x for x in infos if sum(a != b for a, b in zip(acc, x[2])) <= 1]
             if k < end and infos:
-                starts.append((k, infos, PREFIX_BONUS))
+                starts.append((k, infos, Solution.PREFIX_BONUS))
                 keyword = keyword or bool(bound[k])
         if bound[i]:
             # tiền tố viết sai 1 lỗi: phải đứng thành từ riêng, và dấu của input (nếu có) phải là dấu
@@ -537,7 +704,7 @@ class Solution:
                     marks = [c for c in A[i:k] if c > "\x7f"]
                     infos = [x for x in infos if all(c in x[2] for c in marks)]
                     if infos:
-                        starts.append((k, infos, -FUZZY_PREFIX_PENALTY))
+                        starts.append((k, infos, -Solution.FUZZY_PREFIX_PENALTY))
                         keyword = True
         for k, infos, prefix_bonus in starts:
             if fuzzy and k == i and keyword:
@@ -550,14 +717,14 @@ class Solution:
                         if pt == t:
                             ok, group, bonus = True, g, prefix_bonus
                             break
-                        if pt == ANY:
+                        if pt == Solution.ANY:
                             ok = True
                     if not ok:
                         continue
                 trie = self.tries[t]
                 if fuzzy:
                     matches = trie.fuzzy(S, k, end)
-                    if HEAD_FIX:
+                    if Solution.HEAD_FIX:
                         for j, ids, edits, penalty in trie.fuzzy_head(S, k, end):
                             unit = self._score(ctx, i, k, j, t, ids, edits, group, bonus)
                             if unit is not None and unit[3] - penalty >= max(2.0, 0.5 * (j - i)):
@@ -566,7 +733,7 @@ class Solution:
                     matches = trie.exact(S, k, end)
                     for m in self.initials[t].exact(S, k, end):
                         # viết tắt đường/phường phải viết HOA ("NKKN"), để "khu" không thành "Kiều Hòa Uyên"
-                        if t == PROVINCE or O[k:m[0]].isupper():
+                        if t == Solution.PROVINCE or O[k:m[0]].isupper():
                             matches.append(m)
                 for j, ids, edits in matches:
                     if fuzzy and not edits:
@@ -587,22 +754,28 @@ class Solution:
         if edits and any(c.isdigit() for c in S[k:j]):
             return None  # không sửa lỗi trên phần chữ số
         covered = j - i
-        score = covered - EDIT_PENALTY * edits + bonus + TYPE_BIAS[t]
+        score = covered - Solution.EDIT_PENALTY * edits + bonus + Solution.TYPE_BIAS[t]
         if not bound[i]:
-            score -= BOUNDARY_PENALTY
+            score -= Solution.BOUNDARY_PENALTY
         if not bound[j]:
-            score -= BOUNDARY_PENALTY
+            score -= Solution.BOUNDARY_PENALTY
         if score < max(2.0, 0.5 * covered):
             return None
-        if t == STREET and i > 0 and S[i - 1].isdigit():
-            score += HOUSE_NUMBER_BONUS
+        if t == Solution.STREET and i > 0 and S[i - 1].isdigit():
+            score += Solution.HOUSE_NUMBER_BONUS
         eid = self._pick(ids, group, A[k:j])
+        if edits and j - k <= Solution.SHORT_NAME_LEN:
+            # tên ngắn sửa lỗi: input có dấu thì tập dấu phải trùng tên DB
+            # ("Bàn Lờ" -> Bàn Cờ được; "Lê Lai" -> Lê Lợi không, vì đó là một tên khác)
+            marks = sorted(c for c in A[k:j] if c > "\x7f")
+            if marks and marks != sorted(c for c in self.accents[eid] if c > "\x7f"):
+                return None
         if group is not None and self.groups[eid] == group:
-            score += GROUP_BONUS
+            score += Solution.GROUP_BONUS
         marks = [c for c in A[k:j] if c > "\x7f"]
         if marks:
             ref = self.accents[eid]
-            score += ACCENT_BONUS * sum(c in ref for c in marks) / len(marks)
+            score += Solution.ACCENT_BONUS * sum(c in ref for c in marks) / len(marks)
         return (i, j, t, score, eid)
 
     def _pick(self, ids, group, accented):
@@ -635,7 +808,7 @@ class Solution:
         for a in range(len(words)):
             if time.perf_counter() > deadline:
                 return
-            for m in range(HOLE_MIN_WORDS, min(HOLE_MAX_WORDS, len(words) - a) + 1):
+            for m in range(Solution.HOLE_MIN_WORDS, min(Solution.HOLE_MAX_WORDS, len(words) - a) + 1):
                 window = words[a:a + m]
                 misses = m - sum(known[a:a + m])
                 if misses > 1:
@@ -647,18 +820,164 @@ class Solution:
                     ws, we = tokens[a + h]
                     if not w.isalpha() or w in self.prefix_words or covered[ws]:
                         continue
-                    hits = [x for x in self.holes.get(_hole_key(window, h), ())
-                            if abs(x[2] - len(w)) <= HOLE_LEN_DIFF]
+                    hits = [x for x in self.holes.get(Solution._hole_key(window, h), ())
+                            if abs(x[2] - len(w)) <= Solution.HOLE_LEN_DIFF]
                     if len({x[1] for x in hits}) != 1:
                         continue
-                    t, eid, _ = hits[0]
+                    t, eid, _, orig = hits[0]
+                    if h == 0 and Solution._lev(w, orig) > Solution._first_word_budget(len(orig)):
+                        continue  # từ đầu sai >= 60%: bỏ, xét ứng viên khác
                     i, j = tokens[a][0], tokens[a + m - 1][1]
                     unit = self._score(ctx, i, i, j, t, [eid], 0, None, 0.0)
                     if unit is None:
                         continue
-                    score = unit[3] - (we - ws) - HOLE_PENALTY
+                    score = unit[3] - (we - ws) - Solution.HOLE_PENALTY
                     if score >= max(2.0, 0.5 * (j - i - (we - ws))):
                         out.append(unit[:3] + (score,) + unit[4:])
+
+    def _first_matches(self, q):
+        """Các từ đầu trong DB cách q < 60% số ký tự (theo độ dài từ DB). Có cache theo q."""
+        hit = self._first_cache.get(q)
+        if hit is None:
+            cands = set()
+            for d in Solution._deletes(q, min(4, Solution._first_word_budget(len(q) + 2))):
+                cands.update(self.first_index.get(d, ()))
+            hit = []
+            for v in cands:
+                e = Solution._lev(q, v)
+                if e <= Solution._first_word_budget(len(v)):
+                    hit.append((v, e))
+            if len(self._first_cache) > 50000:
+                self._first_cache.clear()
+            self._first_cache[q] = hit
+        return hit
+
+    def _collect_loose(self, ctx, tokens, covered, types, deadline, out):
+        """Khớp lỏng cho các loại còn thiếu, chỉ bắt đầu ở từ CHƯA được giải thích.
+
+        1. Từ đầu tại vị trí đó phải khớp từ đầu của tên DB với sai < 60% (tra chỉ mục SymSpell).
+        2. Các tên có từ đầu đó: lọc bằng số bigram chung (mỗi lỗi làm mất tối đa 2 bigram),
+           xếp theo tỉ lệ bigram chung, lấy LOOSE_TOP tên.
+        3. Levenshtein neo tại đầu từ, kết thúc ở ranh giới từ: tổng lỗi <= 40% độ dài tên.
+        Thiếu từ ("Nam Kỳ Nghĩa") được tính là lỗi xoá ký tự nên cũng nằm trong 40%.
+        """
+        S, A, O, bound = ctx
+        n = len(S)
+        starts = []   # (token bắt đầu tên, vị trí bắt đầu ứng viên (kể cả tiền tố), loại cho phép, thưởng, nhóm)
+        for s, (a, b) in enumerate(tokens):
+            if covered[a]:
+                continue
+            keyword = False
+            for k, infos, _ in self.prefixes.exact(S, a, n):
+                if not bound[k] or k >= n:
+                    continue
+                acc = A[a:k]
+                if acc != S[a:k]:  # input có dấu: "Dương" (họ) không phải tiền tố "Đường"
+                    infos = [x for x in infos if sum(c != d for c, d in zip(acc, x[2])) <= 1]
+                s2 = next((x for x in range(s + 1, len(tokens)) if tokens[x][0] == k), None)
+                if not infos or s2 is None or covered[k]:
+                    continue
+                keyword = True
+                for pt, g, _ in infos:
+                    if pt == Solution.ANY:
+                        starts.append((s2, a, types, 0.0, None))
+                    elif pt in types:
+                        starts.append((s2, a, (pt,), Solution.PREFIX_BONUS, g))
+            if not keyword:
+                starts.append((s, a, types, 0.0, None))
+
+        seen = set()
+        for s, i, allowed, bonus, group in starts:
+            if time.perf_counter() > deadline:
+                return
+            k, kb = tokens[s]
+            q = S[k:kb]
+            if not q.isalpha():
+                continue
+            if q in Solution.ABBREVIATIONS:
+                self._collect_abbrev(ctx, q, i, k, kb, allowed, bonus, group, out)
+                continue
+            window = Solution._bigrams(S[k:k + 48])
+            pool = []
+            for v, _ in self._first_matches(q):
+                for t, eid, key, bg in self.loose_by_first[v]:
+                    if t not in allowed or (i, t, eid) in seen:
+                        continue
+                    shared = len(bg & window)
+                    if shared and shared >= len(bg) - 2 * Solution._loose_budget(len(key)):
+                        pool.append((shared / len(bg), t, eid, key))
+            pool.sort(reverse=True)
+            for _, t, eid, key in pool[:Solution.LOOSE_TOP]:
+                seen.add((i, t, eid))
+                budget = Solution._loose_budget(len(key))
+                m = Solution._anchored_lev(key, S, k, min(n, k + len(key) + budget), bound, budget)
+                if m is None:
+                    continue
+                edits, j = m
+                if any(c.isdigit() for c in S[k:j]):
+                    continue
+                if len(key) <= Solution.SHORT_NAME_LEN and edits:
+                    marks = sorted(c for c in A[k:j] if c > "\x7f")
+                    if marks and marks != sorted(c for c in self.accents[eid] if c > "\x7f"):
+                        continue  # tên ngắn, input có dấu mà khác dấu: là tên khác ("Lê Lai" ≠ Lê Lợi)
+                score = (j - i) - Solution.LOOSE_EDIT_PENALTY * edits - Solution.LOOSE_PENALTY + bonus + Solution.TYPE_BIAS[t]
+                if not bound[i]:
+                    score -= Solution.BOUNDARY_PENALTY
+                if t == Solution.STREET and i > 0 and S[i - 1].isdigit():
+                    score += Solution.HOUSE_NUMBER_BONUS
+                if group is not None and self.groups[eid] == group:
+                    score += Solution.GROUP_BONUS
+                if score >= Solution.LOOSE_MIN_SCORE:
+                    out.append((i, j, t, score, eid))
+
+    def _collect_abbrev(self, ctx, q, i, k, kb, allowed, bonus, group, out):
+        """Từ đầu là viết tắt ("Ng Thị Minh Khai"): thử mọi từ đầy đủ của q trong ABBREVIATIONS.
+        Từ viết tắt không tính lỗi; phần còn lại của tên khớp neo tại từ kế tiếp, sai <= 40% phần đó."""
+        S, A, _, bound = ctx
+        n = len(S)
+        r0 = kb
+        while r0 < n and not bound[r0]:
+            r0 += 1
+        if r0 >= n:
+            return
+        window = Solution._bigrams(S[r0:r0 + 48])
+        for rank, v in enumerate(Solution.ABBREVIATIONS[q]):
+            pool = []
+            for t, eid, key, _ in self.loose_by_first.get(v, ()):
+                if t not in allowed:
+                    continue
+                rest = key[len(v):]
+                if len(rest) < 3:
+                    continue   # "Ng Ha" quá ít thông tin
+                bg = self._rest_bigrams.get(eid)
+                if bg is None:
+                    bg = self._rest_bigrams[eid] = Solution._bigrams(rest)
+                shared = len(bg & window)
+                if shared and shared >= len(bg) - 2 * Solution._loose_budget(len(rest)):
+                    pool.append((shared / len(bg), t, eid, rest))
+            pool.sort(reverse=True)
+            for _, t, eid, rest in pool[:Solution.LOOSE_TOP]:
+                budget = Solution._loose_budget(len(rest))
+                m = Solution._anchored_lev(rest, S, r0, min(n, r0 + len(rest) + budget), bound, budget)
+                if m is None:
+                    continue
+                edits, j = m
+                if any(c.isdigit() for c in S[r0:j]):
+                    continue
+                score = (j - i) - Solution.LOOSE_EDIT_PENALTY * edits - Solution.LOOSE_PENALTY + bonus + Solution.TYPE_BIAS[t] \
+                    - Solution.ABBREV_ORDER_PENALTY * rank
+                if not bound[i]:
+                    score -= Solution.BOUNDARY_PENALTY
+                if t == Solution.STREET and i > 0 and S[i - 1].isdigit():
+                    score += Solution.HOUSE_NUMBER_BONUS
+                if group is not None and self.groups[eid] == group:
+                    score += Solution.GROUP_BONUS
+                marks = [c for c in A[r0:j] if c > "\x7f"]
+                if marks:   # dấu của phần còn lại phá thế hoà ("Ng Huệ": Nguyễn Huệ / Ngô Huệ)
+                    ref = self.accents[eid]
+                    score += Solution.ACCENT_BONUS * sum(c in ref for c in marks) / len(marks)
+                if score >= Solution.LOOSE_MIN_SCORE:
+                    out.append((i, j, t, score, eid))
 
     def _collect_acronyms(self, S, tokens, out):
         """Input viết đầy đủ ("Lý Thường Kiệt") nhưng DB lưu viết tắt ("LTK")."""
@@ -667,9 +986,72 @@ class Solution:
         words = [S[a:b] for a, b in tokens]
         for a in range(len(words)):
             for b in range(a + 2, min(len(words), a + 8) + 1):
-                key = _initials(words[a:b])
-                for t in (STREET, WARD, PROVINCE):
+                key = Solution._initials(words[a:b])
+                for t in (Solution.STREET, Solution.WARD, Solution.PROVINCE):
                     ids = self.acronyms[t].get(key)
                     if ids:
                         i, j = tokens[a][0], tokens[b - 1][1]
-                        out.append((i, j, t, (j - i) - ACRONYM_PENALTY + TYPE_BIAS[t], ids[0]))
+                        out.append((i, j, t, (j - i) - Solution.ACRONYM_PENALTY + Solution.TYPE_BIAS[t], ids[0]))
+
+
+# ==== HẾT PHẦN NỘP (cell Solution của notebook) ==== export cho test / evaluate / benchmark
+ABBREVIATIONS = Solution.ABBREVIATIONS
+ABBREV_ORDER_PENALTY = Solution.ABBREV_ORDER_PENALTY
+ACCENT_BONUS = Solution.ACCENT_BONUS
+ACRONYM_PENALTY = Solution.ACRONYM_PENALTY
+ANY = Solution.ANY
+BOUNDARY_PENALTY = Solution.BOUNDARY_PENALTY
+CONTAIN_BONUS = Solution.CONTAIN_BONUS
+EDIT_PENALTY = Solution.EDIT_PENALTY
+FIELDS = Solution.FIELDS
+FIRST_WORD_MAX_RATIO = Solution.FIRST_WORD_MAX_RATIO
+FUZZY_PREFIX_MIN_LEN = Solution.FUZZY_PREFIX_MIN_LEN
+FUZZY_PREFIX_PENALTY = Solution.FUZZY_PREFIX_PENALTY
+FUZZY_TIME_BUDGET = Solution.FUZZY_TIME_BUDGET
+GROUP_BONUS = Solution.GROUP_BONUS
+HEAD_ANCHOR = Solution.HEAD_ANCHOR
+HEAD_DEL_MIN_LEN = Solution.HEAD_DEL_MIN_LEN
+HEAD_DEL_PENALTY = Solution.HEAD_DEL_PENALTY
+HEAD_FIX = Solution.HEAD_FIX
+HEAD_MIN_LEN = Solution.HEAD_MIN_LEN
+HEAD_PENALTY = Solution.HEAD_PENALTY
+HOLE_LEN_DIFF = Solution.HOLE_LEN_DIFF
+HOLE_MAX_WORDS = Solution.HOLE_MAX_WORDS
+HOLE_MIN_WORDS = Solution.HOLE_MIN_WORDS
+HOLE_PENALTY = Solution.HOLE_PENALTY
+HOUSE_NUMBER_BONUS = Solution.HOUSE_NUMBER_BONUS
+LOOSE_EDIT_PENALTY = Solution.LOOSE_EDIT_PENALTY
+LOOSE_MAX_RATIO = Solution.LOOSE_MAX_RATIO
+LOOSE_MIN_LEN = Solution.LOOSE_MIN_LEN
+LOOSE_MIN_SCORE = Solution.LOOSE_MIN_SCORE
+LOOSE_PENALTY = Solution.LOOSE_PENALTY
+LOOSE_TOP = Solution.LOOSE_TOP
+MAX_EDITS = Solution.MAX_EDITS
+NOT_FOUND = Solution.NOT_FOUND
+ORDER_BONUS = Solution.ORDER_BONUS
+PREFIXES = Solution.PREFIXES
+PREFIX_BONUS = Solution.PREFIX_BONUS
+PROVINCE = Solution.PROVINCE
+REQUEST_TIME_BUDGET = Solution.REQUEST_TIME_BUDGET
+SHORT_NAME_LEN = Solution.SHORT_NAME_LEN
+STREET = Solution.STREET
+TYPE_BIAS = Solution.TYPE_BIAS
+Trie = Solution.Trie
+WARD = Solution.WARD
+_FOLD = Solution._FOLD
+_allowed_edits = Solution._allowed_edits
+_anchored_lev = Solution._anchored_lev
+_best_segmentation = Solution._best_segmentation
+_bigrams = Solution._bigrams
+_deletes = Solution._deletes
+_first_word_budget = Solution._first_word_budget
+_fold = Solution._fold
+_hole_key = Solution._hole_key
+_initials = Solution._initials
+_lev = Solution._lev
+_loose_budget = Solution._loose_budget
+_prefix_budget = Solution._prefix_budget
+_prefix_rows = Solution._prefix_rows
+_promote_containing = Solution._promote_containing
+_same_word = Solution._same_word
+analyze = Solution.analyze
