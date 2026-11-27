@@ -214,22 +214,36 @@ Các tên chung tiền tố dùng chung phần tính toán. Để nhanh và ít 
 - không sửa lỗi phần chữ số (`Phường 14` không thành `Phường 12`);
 - không sửa lỗi khi đoạn bắt đầu bằng một từ khoá (`phuong` không thành tên `Phú Long`).
 
-**Lượt 3, khớp lỏng** (chỉ chạy khi vẫn còn chữ chưa giải thích và còn trường chưa gán). Cho phép
-**sai / thiếu tới 40%** số ký tự của tên, kể cả thiếu nguyên một từ (`Nam Kỳ Nghĩa` → Nam Kỳ Khởi Nghĩa):
-1. Chỉ bắt đầu ở từ **chưa được giải thích**: không thuộc trường đã chọn và không khớp chính xác một tên DB
-   nào (`Ba Đình` là tên phường có thật thì không bị "sửa" thành tên đường khác).
+**Chuẩn hoá nhiễu**: chữ cái lặp ≥ 3 lần liền trong một từ được gộp còn 1 (`khaiiiiii` → khai, `Bànnnn` → Bàn;
+tiếng Việt bỏ dấu không có chữ cái lặp 3 lần), chữ số giữ nguyên.
+
+**Viết tắt** (ở lượt 2, so khớp **theo từ**): từ đầu tra bảng `ABBREVIATIONS` (`Ng` → Nguyễn / Ngô / Nghiêm,
+`Tr` → Trần / Trương...; thử **mọi** giá trị). Các từ sau: khớp đúng, chữ cái đơn là viết tắt (`T` → Thị),
+sai chính tả (< 60% từ), thiếu từ, token nhiễu ngắn ở giữa, hoặc 2 token bị ký tự rác tách đôi (`Kh*ai`).
+Tổng lỗi (không tính viết tắt) ≤ 40%, **từ cuối (tên chính) phải khớp**, tên gần nhất thắng.
+`Ng T Minh khaiiiii`, `Ng@ T# Minh Kh*ai`, `Ng. T. Minh Khai` → Nguyễn Thị Minh Khai.
+
+**Lượt 3, khớp lỏng**: cho phép **sai / thiếu tới 40%** số ký tự của tên, kể cả thiếu nguyên một từ
+(`Nam Kỳ Nghĩa` → Nam Kỳ Khởi Nghĩa). Chạy cả khi đã đủ 3 trường (`LOOSE_ALWAYS`): trường lấy từ lượt 2 có
+thể là sửa lỗi nhầm, DP so điểm lại; chỉ bỏ qua loại đã khớp **chính xác**.
+1. Chỉ bắt đầu ở từ **chưa được giải thích**: không khớp chính xác một tên DB nào (`Ba Đình` là tên phường
+   có thật thì không bị "sửa" thành tên đường khác). Xét trước các từ gần trường đã tìm thấy; tối đa
+   `LOOSE_TIME_BUDGET` = 6 ms / request (ghi chú dài nằm xa địa chỉ nên bị cắt trước).
 2. **Từ đầu** của input phải khớp từ đầu của tên DB với **sai < 60%** (sai 60–80% thì bỏ, xét ứng viên khác).
    Tra bằng chỉ mục xoá ký tự kiểu SymSpell nên chỉ tốn vài phép tra dict.
-3. Các tên có từ đầu đó được lọc bằng số **bigram** chung (mỗi lỗi làm mất tối đa 2 bigram), lấy 15 tên
-   nhiều bigram chung nhất, rồi tính Levenshtein neo ở đầu từ, kết thúc ở ranh giới từ: tổng lỗi ≤ 40%.
-4. Chỉ áp dụng cho tên ≥ 5 ký tự; tên ngắn có dấu mà khác dấu với DB thì bỏ (`Lê Lai` ≠ `Lê Lợi`).
-5. **Từ viết tắt** (`Ng`, `Tr`, `Ph`, `Hg`...): mất > 60% nên không qua bước 2, được tra bảng
-   `ABBREVIATIONS`. Một viết tắt có nhiều giá trị (`Ng` → Nguyễn / Ngô / Nghiêm): thử **tất cả**. Từ viết tắt
-   không tính lỗi, phần còn lại của tên (≥ 3 ký tự) phải sai ≤ 40%, và **tên gần nhất** (ít lỗi nhất, hợp dấu
-   nhất) thắng. Hoà thì ưu tiên giá trị đứng trước trong bảng. `Ng Thị Minh Khai` → Nguyễn Thị Minh Khai,
-   `Ph Văn Trị` → Phan Văn Trị, `Ph Văn Đồng` → Phạm Văn Đồng.
+3. **Chỉ mục n-gram**: nhóm tên cùng từ đầu mà lớn (> 40 tên, vd "Nguyễn ..." có hàng trăm tên) không quét
+   hết mà tra chỉ mục ngược **bigram → tên trong nhóm**, chỉ đếm bigram **hiếm** trong nhóm (có ở ≤ 1/4 số
+   tên; bigram phổ biến không phân biệt được và tốn thời gian đếm nhất), giữ 60 tên nhiều bigram hiếm chung
+   nhất. Nhóm nhỏ quét cả nhóm. Bigram bền với lỗi hơn trigram: sai 30–40% phá gần hết trigram.
+4. Lọc bằng số bigram chung (mỗi lỗi làm mất tối đa 2 bigram), lấy 15 tên tốt nhất chung **và 2 tên tốt nhất
+   của mỗi nhóm từ đầu** (tên ngắn sai nhiều như `Tàn Lờ` → Bàn Cờ chỉ chung 25% bigram, không bị tên dài
+   nhóm khác đẩy ra), rồi tính Levenshtein neo ở đầu từ, kết thúc ở ranh giới từ: tổng lỗi ≤ 40%.
+5. Chỉ áp dụng cho tên ≥ 5 ký tự; tên ngắn có dấu mà khác dấu với DB thì bỏ (`Lê Lai` ≠ `Lê Lợi`).
 
-Điểm của ứng viên lượt 3: `số ký tự phủ − 1.0 × số lỗi − 1.0` (+ các thưởng tiền tố / số nhà như dưới).
+Điểm của ứng viên lượt 3: `số ký tự phủ − 1.0 × số lỗi − 1.0` + các thưởng tiền tố / số nhà như dưới,
+± 0.75 theo **dấu**: dấu của input khớp tên DB thì cộng, lệch thì trừ (`Tàn Lờ`: Bàn Cờ sai 2 ký tự nhưng
+trùng dấu thắng Tân Lộc sai 1 ký tự mà lệch dấu). Lượt 2 không được sửa lỗi bằng cách mượn 1–2 chữ đầu của
+từ kế bên (`Tàn Lờ, Hồ` → `tanlo|h` ≈ Tân Lộc).
 
 ### 3.4. Chấm điểm một ứng viên
 

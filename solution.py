@@ -92,6 +92,16 @@ class Solution:
     LOOSE_MIN_SCORE = 1.0
     LOOSE_TOP = 15                 # số ứng viên (xếp theo bigram chung) được kiểm tra Levenshtein mỗi vị trí
     LOOSE_MIN_LEN = 5              # tên ngắn hơn: 40% chỉ còn 1 lỗi, lượt 2 đã lo
+    LOOSE_ACCENT = 0.75            # dấu input khớp hết tên DB: +0.75, lệch hết: -0.75 (input không dấu: 0)
+    LOOSE_PER_GROUP = 2            # mỗi nhóm từ đầu luôn được kiểm tra ít nhất 2 tên tốt nhất
+    LOOSE_TIME_BUDGET = 0.006      # giây tối đa cho lượt 3 mỗi request (input kèm ghi chú dài)
+    LOOSE_ALWAYS = True            # lượt 3 chạy cả khi đã đủ 3 trường (xem process)
+    # Chỉ mục n-gram cho lượt 3: nhóm tên cùng từ đầu mà lớn ("Nguyễn ..." có hàng trăm tên) thì không quét
+    # hết, mà tra chỉ mục ngược n-gram -> tên trong nhóm, chỉ đếm n-gram HIẾM trong nhóm.
+    NGRAM = 2                      # bigram: bền với lỗi hơn trigram (sai 30-40% phá gần hết trigram)
+    NGRAM_GROUP_MIN = 40           # nhóm <= 40 tên: quét bigram cả nhóm như cũ
+    NGRAM_RARE = 4                 # n-gram có trong > 1/4 số tên của nhóm: không phân biệt được, bỏ
+    NGRAM_KEEP = 4                 # mỗi nhóm lớn giữ LOOSE_TOP * 4 tên nhiều n-gram hiếm chung nhất
 
     # Từ viết tắt (không dấu, đã bỏ dấu chấm) -> các từ đầy đủ có thể có, theo thứ tự hay gặp.
     # Viết tắt mất > 60% ký tự ("Ng" / "Nguyễn" mất 4/6) nên không qua được ngưỡng từ đầu: tra bảng này,
@@ -156,6 +166,11 @@ class Solution:
             out |= frontier
         return out
 
+
+    @staticmethod
+    def _ngrams(s, q=None):
+        q = q or Solution.NGRAM
+        return frozenset(s[x:x + q] for x in range(len(s) - q + 1))
 
     @staticmethod
     def _bigrams(s):
@@ -568,6 +583,17 @@ class Solution:
                     self._add(etype, name)
         self.fuzzy_prefixes = self._build_fuzzy_prefixes()
         # chỉ mục xoá ký tự của các từ đầu (SymSpell): tra từ đầu sai < 60% bằng vài phép tra dict
+        # chỉ mục n-gram trong từng nhóm lớn: v -> {n-gram: [vị trí trong loose_by_first[v]]}
+        self.ngram_index = {}
+        for v, grp in self.loose_by_first.items():
+            if len(grp) <= Solution.NGRAM_GROUP_MIN:
+                continue
+            idx = {}
+            for x, (_, _, key, _) in enumerate(grp):
+                for g in Solution._ngrams(key):
+                    idx.setdefault(g, []).append(x)
+            cap = max(4, len(grp) // Solution.NGRAM_RARE)
+            self.ngram_index[v] = {g: tuple(l) for g, l in idx.items() if len(l) <= cap}
         self.first_index = {}
         for v in self.loose_by_first:
             for d in Solution._deletes(v, Solution._first_word_budget(len(v))):
@@ -692,13 +718,23 @@ class Solution:
             # Lượt 3: vẫn còn chữ chưa giải thích -> khớp lỏng (sai / thiếu tới 40%, từ đầu sai < 60%)
             # "đã giải thích" = phần được chọn + mọi đoạn khớp CHÍNH XÁC một tên DB (kể cả không được chọn,
             # vd "Ba Đình" khi phường đã là Ngọc Hà): tên có thật thì không phải lỗi chính tả
+            # LOOSE_ALWAYS: chạy cả khi đã đủ 3 trường (trường lấy từ lượt 2 có thể là sửa lỗi nhầm,
+            # DP so lại); khi đó chỉ bỏ qua loại đã có khớp CHÍNH XÁC được chọn.
             covered = bytearray(n)
+            exact_ids = {(u[2], u[4]) for u in units[:n_exact]}
             for u in list(chosen.values()) + units[:n_exact]:
-                covered[u[0]:u[1]] = b"\x01" * (u[1] - u[0])
-            if len(chosen) < 3 and time.perf_counter() < deadline and \
-                    any(S[p].isalpha() and not covered[p] for p in range(n)):
+                if not Solution.LOOSE_ALWAYS or (u[2], u[4]) in exact_ids:
+                    covered[u[0]:u[1]] = b"\x01" * (u[1] - u[0])
+            if Solution.LOOSE_ALWAYS:
+                types = tuple(t for t in (Solution.STREET, Solution.WARD, Solution.PROVINCE)
+                              if t not in chosen or (t, chosen[t][4]) not in exact_ids)
+            else:
                 types = tuple(t for t in (Solution.STREET, Solution.WARD, Solution.PROVINCE) if t not in chosen)
-                self._collect_loose(ctx, tokens, covered, types, deadline, units)
+            if types and time.perf_counter() < deadline and \
+                    any(S[p].isalpha() and not covered[p] for p in range(n)):
+                anchors = [(u[0], u[1]) for u in chosen.values()]
+                loose_deadline = min(deadline, time.perf_counter() + Solution.LOOSE_TIME_BUDGET)
+                self._collect_loose(ctx, tokens, covered, types, loose_deadline, units, anchors)
                 chosen = Solution._best_segmentation(n, units)
 
         for t, u in chosen.items():
@@ -774,6 +810,12 @@ class Solution:
             return None
         if edits and any(c.isdigit() for c in S[k:j]):
             return None  # không sửa lỗi trên phần chữ số
+        if edits and not bound[j]:
+            p = j - 1
+            while p > k and not bound[p]:
+                p -= 1
+            if p > k and j - p <= 2:
+                return None  # sửa lỗi bằng cách mượn 1-2 chữ đầu của từ kế ("Tàn Lờ, Hồ" -> "tanlo|h" ~ Tân Lộc)
         covered = j - i
         score = covered - Solution.EDIT_PENALTY * edits + bonus + Solution.TYPE_BIAS[t]
         if not bound[i]:
@@ -873,7 +915,7 @@ class Solution:
             self._first_cache[q] = hit
         return hit
 
-    def _collect_loose(self, ctx, tokens, covered, types, deadline, out):
+    def _collect_loose(self, ctx, tokens, covered, types, deadline, out, anchors=()):
         """Khớp lỏng cho các loại còn thiếu, chỉ bắt đầu ở từ CHƯA được giải thích.
 
         1. Từ đầu tại vị trí đó phải khớp từ đầu của tên DB với sai < 60% (tra chỉ mục SymSpell).
@@ -907,6 +949,12 @@ class Solution:
             if not keyword:
                 starts.append((s, a, types, 0.0, None))
 
+        if anchors:
+            # xét trước các từ gần trường đã tìm thấy: địa chỉ nằm sát nhau, ghi chú dài thường ở xa
+            def dist(st):
+                a = tokens[st[0]][0]
+                return min(max(x - a, a - y, 0) for x, y in anchors)
+            starts.sort(key=dist)
         seen = set()
         for s, i, allowed, bonus, group in starts:
             if time.perf_counter() > deadline:
@@ -918,16 +966,41 @@ class Solution:
             if q in Solution.ABBREVIATIONS:
                 continue   # lượt 2 đã xử lý bằng _collect_abbrev
             window = Solution._bigrams(S[k:k + 48])
-            pool = []
+            wgrams = None
+            pool, must = [], []
             for v, _ in self._first_matches(q):
-                for t, eid, key, bg in self.loose_by_first[v]:
+                grp = self.loose_by_first[v]
+                idx = self.ngram_index.get(v)
+                if idx is None:
+                    cands = grp                       # nhóm nhỏ: xét cả nhóm
+                else:
+                    # nhóm lớn: đếm n-gram hiếm chung với cửa sổ input, giữ các tên nhiều nhất
+                    if wgrams is None:
+                        wgrams = Solution._ngrams(S[k:k + 48])
+                    cnt = {}
+                    for g in wgrams:
+                        for x in idx.get(g, ()):
+                            cnt[x] = cnt.get(x, 0) + 1
+                    keep = Solution.LOOSE_TOP * Solution.NGRAM_KEEP
+                    top = sorted(cnt, key=cnt.get, reverse=True)[:keep] if len(cnt) > keep else cnt
+                    cands = [grp[x] for x in top]
+                mine = []
+                for t, eid, key, bg in cands:
                     if t not in allowed or (i, t, eid) in seen:
                         continue
                     shared = len(bg & window)
                     if shared and shared >= len(bg) - 2 * Solution._loose_budget(len(key)):
-                        pool.append((shared / len(bg), t, eid, key))
+                        mine.append((shared / len(bg), t, eid, key))
+                if len(mine) > Solution.LOOSE_PER_GROUP:
+                    mine.sort(reverse=True)
+                    must.extend(mine[:Solution.LOOSE_PER_GROUP])
+                else:
+                    must.extend(mine)
+                pool.extend(mine)
+            # top LOOSE_TOP chung + LOOSE_PER_GROUP tên tốt nhất của MỖI nhóm từ đầu: tên ngắn sai nhiều
+            # ("Tàn Lờ" -> Bàn Cờ, bigram chung chỉ 25%) không bị tên dài của nhóm khác đẩy ra ngoài
             pool.sort(reverse=True)
-            for _, t, eid, key in pool[:Solution.LOOSE_TOP]:
+            for _, t, eid, key in dict.fromkeys(pool[:Solution.LOOSE_TOP] + must):
                 seen.add((i, t, eid))
                 budget = Solution._loose_budget(len(key))
                 m = Solution._anchored_lev(key, S, k, min(n, k + len(key) + budget), bound, budget)
@@ -947,6 +1020,11 @@ class Solution:
                     score += Solution.HOUSE_NUMBER_BONUS
                 if group is not None and self.groups[eid] == group:
                     score += Solution.GROUP_BONUS
+                marks = [c for c in A[k:j] if c > ""]
+                if marks:   # dấu của input: khớp tên DB thì cộng, lệch thì trừ ("Tàn Lờ" -> Bàn Cờ, không phải Tân Lộc)
+                    ref = self.accents[eid]
+                    hit = sum(c in ref for c in marks)
+                    score += Solution.LOOSE_ACCENT * (2 * hit - len(marks)) / len(marks)
                 if score >= Solution.LOOSE_MIN_SCORE:
                     out.append((i, j, t, score, eid))
 
